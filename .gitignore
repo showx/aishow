@@ -1,0 +1,21 @@
+# runtime
+backend/data/
+backend/.env
+*.db
+*.db-wal
+*.db-shm
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+
+# go
+backend/tmp/
+*.exe
+
+# os / ide
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
