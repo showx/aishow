@@ -12,7 +12,7 @@
       <p class="hint">{{ engineHint }}</p>
 
       <div class="seg">
-        <button v-for="m in visibleModes" :key="m.id" :class="{ active: form.mode === m.id }" @click="form.mode = m.id">{{ m.label }}</button>
+        <button v-for="m in visibleModes" :key="m.id" :class="{ active: form.mode === m.id }" @click="setMode(m.id)">{{ m.label }}</button>
       </div>
 
       <div class="field">
@@ -140,10 +140,11 @@ const refAudio = ref<File | null>(null)
 
 const engines = [
   { id: 'h3' as JobEngine, label: 'H3-Base 本地' },
+  { id: 'h3-ref2va-int8' as JobEngine, label: 'H3 Ref2VA INT8' },
   { id: 'fasth3' as JobEngine, label: 'FastH3 本地' },
   { id: 'llada-image' as JobEngine, label: 'LLaDA-Image' },
 ]
-const enginePref: JobEngine[] = ['fasth3', 'h3', 'llada-image']
+const enginePref: JobEngine[] = ['fasth3', 'h3', 'h3-ref2va-int8', 'llada-image']
 const userPickedEngine = ref(false)
 const autoPickedEngine = ref(false)
 const modes = [
@@ -200,6 +201,7 @@ const engineOnline = computed(() => {
     h3: false,
     fasth3: false,
     'h3-max': false,
+    'h3-ref2va-int8': false,
     'llada-image': false,
   }
   for (const ep of store.system?.endpoints || []) {
@@ -207,7 +209,8 @@ const engineOnline = computed(() => {
     const name = (ep.name || '').toLowerCase()
     if (name.includes('fasth3')) map.fasth3 = true
     else if (name.includes('llada')) map['llada-image'] = true
-    else if (name.includes('fl2va') || name.includes('ref2va') || name.includes('h3-base')) map.h3 = true
+    else if (name.includes('ref2va') || name.includes('int8')) map['h3-ref2va-int8'] = true
+    else if (name.includes('fl2va') || name.includes('h3-base')) map.h3 = true
   }
   return map
 })
@@ -239,19 +242,23 @@ function applyOnlineDefault() {
 }
 
 const isFastH3 = computed(() => form.engine === 'fasth3' || form.engine === 'h3-max')
+const isRef2VAInt8 = computed(() => form.engine === 'h3-ref2va-int8')
 const isLLada = computed(() => form.engine === 'llada-image')
 const visibleModes = computed(() => {
   if (isLLada.value) return imageModes
-  return isFastH3.value ? modes.filter(m => m.id === 't2va') : modes
+  if (isFastH3.value) return modes.filter(m => m.id === 't2va')
+  if (isRef2VAInt8.value) return modes.filter(m => m.id === 'ref2va')
+  return modes.filter(m => m.id !== 'ref2va')
 })
-const visibleDurations = computed(() => isFastH3.value ? [2, 5, 8, 10, 15] : durations)
+const visibleDurations = computed(() => (isFastH3.value || isRef2VAInt8.value) ? [2, 5, 8, 10, 15] : durations)
 const visibleResolutions = computed(() => {
   if (isLLada.value) return imageResolutions
-  return isFastH3.value ? fastResolutions : resolutionPresets
+  if (isFastH3.value || isRef2VAInt8.value) return fastResolutions
+  return resolutionPresets
 })
 const visibleRatios = computed(() => {
   if (isLLada.value) return imageRatios
-  if (isFastH3.value) return ratios.filter(r => r !== 'auto')
+  if (isFastH3.value || isRef2VAInt8.value) return ratios.filter(r => r !== 'auto')
   return ratios
 })
 const minDuration = computed(() => 2)
@@ -260,17 +267,20 @@ const engineHint = computed(() => {
   const offline = online ? '' : '当前节点离线，请改选带「在线」的引擎。'
   if (isLLada.value) return ['LLaDA-Image 是开源 6B 文生图 / 指令编辑模型。先启动本机边车，再把推理模式设成 auto。', offline].filter(Boolean).join(' ')
   if (isFastH3.value) return ['本地 FastH3 GGUF Q4（ComfyUI 4-step + VSA）。只支持文生。先跑 start_fasth3_gguf.bat，推理模式设成 auto。', offline].filter(Boolean).join(' ')
-  return ['本地 H3-Base / NF4 走 SGLang 或 DiffSynth 边车。', offline].filter(Boolean).join(' ')
+  if (isRef2VAInt8.value) return ['Comfy-Org pruned INT8 参考生成。先跑 start_h3_ref2va_int8.bat。24GB 不要和 NF4 边车同时开。', offline].filter(Boolean).join(' ')
+  return ['本地 H3-Base NF4：文生 / 首尾帧走 start_h3_nf4.bat（30010）。参考生成请改选「H3 Ref2VA INT8」。', offline].filter(Boolean).join(' ')
 })
 const resolutionHint = computed(() => {
   if (isLLada.value) return '文生图边长需能被 16 整除；指令编辑需能被 32 整除。默认 1024。'
   if (isFastH3.value) return '训练分辨率是 768×1344 / 5 秒。24GB 建议先用 480p / 5 秒试一条。'
+  if (isRef2VAInt8.value) return 'INT8 24GB 建议 480p / 5 秒 / 20 步。768p 更吃显存。'
   return 'NF4 24GB 推荐 480p；720p / 1080p 更慢，也可能撑满显存。'
 })
 const actionHint = computed(() => {
   if (isLLada.value) return '将任务投入队列，由工位调用本机 LLaDA-Image /v1/images。'
   if (isFastH3.value) return '将任务投入队列，由工位调用 FastH3 GGUF 边车 /v1/videos（模型别名 fasth3）。'
-  return '将生成任务投入本地队列，由工位顺序调用 SGLang /v1/videos。'
+  if (isRef2VAInt8.value) return '将任务投入队列，由工位调用 Ref2VA INT8 边车 /v1/videos（30011 → ComfyUI）。'
+  return '将生成任务投入本地队列，由工位调用 NF4 / SGLang FL2VA（30010）。'
 })
 const needFirst = computed(() => form.mode === 'i2va' || form.mode === 'fl2va')
 const needLast = computed(() => form.mode === 'l2va' || form.mode === 'fl2va')
@@ -284,6 +294,11 @@ const sizeHint = computed(() => {
   const { width, height } = canvasSize(form.aspect_ratio, form.short_edge)
   return `${width}×${height}`
 })
+
+function setMode(id: JobMode) {
+  form.mode = id
+  if (form.engine === 'h3-ref2va-int8' && form.steps === 50) form.steps = 20
+}
 
 function setEngine(id: JobEngine) {
   form.engine = id
@@ -299,6 +314,17 @@ function setEngine(id: JobEngine) {
   if (form.quality === 'turbo' || form.quality === 'base') form.quality = 'lossless'
   if (form.flow_shift === 1 || form.flow_shift === 5) form.flow_shift = 12
   if (form.steps === 4) form.steps = 50
+  if (id === 'h3-ref2va-int8') {
+    form.mode = 'ref2va'
+    form.steps = 20
+    form.short_edge = form.short_edge >= 640 ? 768 : 480
+    if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
+    return
+  }
+  if (id === 'h3') {
+    if (form.mode === 'ref2va') form.mode = 't2va'
+    if (form.steps === 20) form.steps = 50
+  }
   if (id === 'fasth3' || id === 'h3-max') {
     form.mode = 't2va'
     form.steps = 4
@@ -324,9 +350,11 @@ async function uploadIf(file: File | null) {
   return api.upload(file)
 }
 
-function asEngine(engine?: string): JobEngine {
+function asEngine(engine?: string, mode?: string): JobEngine {
   if (engine === 'fasth3' || engine === 'h3-max') return 'fasth3'
+  if (engine === 'h3-ref2va-int8') return 'h3-ref2va-int8'
   if (engine === 'llada-image') return 'llada-image'
+  if (mode === 'ref2va') return 'h3-ref2va-int8'
   return 'h3'
 }
 
@@ -352,7 +380,7 @@ async function applyHistory(id: string) {
     }
   }
   if (!job) return
-  form.engine = asEngine(job.engine)
+  form.engine = asEngine(job.engine, job.mode)
   form.mode = job.mode
   form.prompt = job.prompt
   form.duration = job.duration || 5
@@ -422,6 +450,14 @@ async function submit() {
   }
   if ((form.engine === 'fasth3' || form.engine === 'h3-max') && form.mode !== 't2va') {
     store.flash('本地 FastH3 目前只支持文生影像')
+    return
+  }
+  if (form.engine === 'h3-ref2va-int8' && form.mode !== 'ref2va') {
+    store.flash('H3 Ref2VA INT8 只支持参考生成')
+    return
+  }
+  if (form.engine === 'h3' && form.mode === 'ref2va') {
+    store.flash('参考生成请改选「H3 Ref2VA INT8」')
     return
   }
   busy.value = true

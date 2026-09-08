@@ -54,7 +54,7 @@
           </div>
         </div>
         <p class="note">
-          FL2VA 承接本地文生 / 首尾帧；Ref2VA 承接参考素材；FastH3 走本机 FastVideo 4-step；LLaDA-Image 承接开源文生图。
+          FL2VA 承接本地文生 / 首尾帧；H3 Ref2VA INT8 承接参考素材；FastH3 走本机 FastVideo 4-step；LLaDA-Image 承接开源文生图。
         </p>
       </article>
 

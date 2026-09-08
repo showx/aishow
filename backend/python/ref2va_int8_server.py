@@ -1,7 +1,8 @@
-"""FastH3 GGUF sidecar for Aishow.
+"""MiniMax H3 Ref2VA INT8 sidecar for Aishow.
 
-Same /v1/videos job API as fasth3_server.py, but submits a ComfyUI graph
-(Q4 DiT + quantized Qwen3-VL + embedded VSA) instead of loading FastVideo.
+Same /v1/videos job API as the NF4 / FastH3 sidecars. Submits the official
+ComfyUI R2V graph with minimax_h3_ref2va_pruned_int8_convrot.safetensors.
+Listen on 30011 so Aishow's existing Ref2VA URL can reach it.
 """
 from __future__ import annotations
 
@@ -17,52 +18,49 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-HOST = os.environ.get("FASTH3_HOST", "127.0.0.1")
-PORT = int(os.environ.get("FASTH3_PORT", "8000"))
-COMFY = os.environ.get("FASTH3_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
-OUT_DIR = Path(os.environ.get("FASTH3_OUT_DIR", r"F:\models\aishow-fasth3-out"))
-COMFY_OUTPUT = Path(os.environ.get(
-    "FASTH3_COMFY_OUTPUT",
-    r"E:\MiniMax-H3\ComfyUI_windows_portable\ComfyUI\output",
+HOST = os.environ.get("H3_REF2VA_HOST", "127.0.0.1")
+PORT = int(os.environ.get("H3_REF2VA_PORT", "30011"))
+COMFY = os.environ.get("H3_REF2VA_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
+OUT_DIR = Path(os.environ.get("H3_REF2VA_OUT_DIR", r"F:\models\aishow-fasth3-out"))
+COMFY_ROOT = Path(os.environ.get(
+    "H3_REF2VA_COMFY_ROOT",
+    r"E:\MiniMax-H3\ComfyUI_windows_portable\ComfyUI",
 ))
+COMFY_OUTPUT = Path(os.environ.get("H3_REF2VA_COMFY_OUTPUT", str(COMFY_ROOT / "output")))
+COMFY_INPUT = Path(os.environ.get("H3_REF2VA_COMFY_INPUT", str(COMFY_ROOT / "input")))
+MEDIA_ROOT = Path(os.environ.get("H3_MEDIA_ROOT", r"D:\code\aishow\backend\data\media"))
 
-UNET = os.environ.get("FASTH3_GGUF_UNET", "FastH3-comfy-Q4_K_M.gguf")
-VIDEO_VAE = os.environ.get("FASTH3_VIDEO_VAE", "minimax_h3_video_vae_fp16.safetensors")
-AUDIO_VAE = os.environ.get("FASTH3_AUDIO_VAE", "minimax_h3_audio_vae_fp32.safetensors")
-TOPK = float(os.environ.get("FASTH3_VSA_TOPK", "0.10"))
-SHIFT_VIDEO = float(os.environ.get("FASTH3_SHIFT_VIDEO", "12"))
-SHIFT_AUDIO = float(os.environ.get("FASTH3_SHIFT_AUDIO", "3"))
+UNET = os.environ.get("H3_REF2VA_UNET", "minimax_h3_ref2va_pruned_int8_convrot.safetensors")
+VIDEO_VAE = os.environ.get("H3_VIDEO_VAE", "minimax_h3_video_vae_fp16.safetensors")
+AUDIO_VAE = os.environ.get("H3_AUDIO_VAE", "minimax_h3_audio_vae_fp32.safetensors")
 CLIP_DIRS = [
-    Path(r"E:\MiniMax-H3\ComfyUI_windows_portable\ComfyUI\models\text_encoders"),
     Path(r"F:\models\fasth3-gguf\text_encoders"),
+    Path(r"E:\MiniMax-H3\ComfyUI_windows_portable\ComfyUI\models\text_encoders"),
 ]
-# Unsloth llama.cpp GGUF has no architecture tag; ComfyUI-GGUF rejects it.
-# Prefer Comfy-Org quantized safetensors that CLIPLoader already sees.
 CLIP_CANDIDATES = [
-    ("qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors", "CLIPLoader"),
-    ("qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "CLIPLoader"),
-    ("qwen3vl_32b_minimax_h3_int8_convrot.safetensors", "CLIPLoader"),
+    "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors",
+    "qwen3vl_32b_minimax_h3_ultra_uncensored_heretic_int8_convrot.safetensors",
+    "qwen3vl_32b_h3_ultra_uncensored_heretic_int8_convrot.safetensors",
+    "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
 ]
 
 
-def resolve_clip() -> tuple[str, str]:
-    forced = os.environ.get("FASTH3_GGUF_CLIP", "").strip()
+def resolve_clip() -> str:
+    forced = os.environ.get("H3_REF2VA_CLIP", "").strip()
     if forced:
-        loader = "CLIPLoaderGGUF" if forced.lower().endswith(".gguf") else "CLIPLoader"
-        return forced, loader
-    for name, loader in CLIP_CANDIDATES:
+        return forced
+    for name in CLIP_CANDIDATES:
         if any((folder / name).exists() for folder in CLIP_DIRS):
-            return name, loader
-    raise RuntimeError(
-        "找不到 ComfyUI 可用的 Qwen3-VL 文本编码器。"
-        "请把 Comfy-Org 的 qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors "
-        "放到 ComfyUI/models/text_encoders。"
-    )
+            return name
+    return CLIP_CANDIDATES[-1]
 
 
-CLIP, CLIP_LOADER = resolve_clip()
+CLIP = resolve_clip()
+SHIFT_VIDEO = float(os.environ.get("H3_SHIFT_VIDEO", "12"))
+SHIFT_AUDIO = float(os.environ.get("H3_SHIFT_AUDIO", "3"))
 
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
@@ -99,16 +97,46 @@ def align_frames(n: int) -> int:
     return min(n, 345)
 
 
-def parse_size(size: str | None, seconds: float) -> tuple[int, int, int]:
-    width, height = 1344, 768
-    if size and "x" in size.lower():
-        a, b = size.lower().split("x", 1)
-        try:
-            width, height = round32(int(a)), round32(int(b))
-        except ValueError:
-            pass
-    frames = align_frames(int(round(max(seconds, 1) * 24)))
-    return width, height, frames
+def canvas(aspect: str | None, short: int) -> tuple[int, int]:
+    short = round32(min(max(short or 480, 32), 1080))
+    aspect = (aspect or "16:9").lower()
+    table = {
+        "16:9": (short, round32(int(short * 16 / 9))),
+        "9:16": (round32(int(short * 16 / 9)), short),
+        "1:1": (short, short),
+        "4:3": (short, round32(int(short * 4 / 3))),
+        "3:4": (round32(int(short * 4 / 3)), short),
+        "21:9": (short, round32(int(short * 21 / 9))),
+    }
+    if aspect in ("auto", "adaptive"):
+        aspect = "16:9"
+    height, width = table.get(aspect, (short, round32(int(short * 16 / 9))))
+    return width, height
+
+
+def parse_uri(uri: str) -> Path:
+    if not uri:
+        raise ValueError("empty uri")
+    if uri.startswith("http://") or uri.startswith("https://"):
+        dest = OUT_DIR / f"dl-{uuid.uuid4().hex}{Path(urlparse(uri).path).suffix or '.bin'}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        req = Request(uri, headers={"Accept": "*/*"})
+        with urlopen(req, timeout=120) as resp, open(dest, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        return dest
+    raw = uri
+    if raw.startswith("file://"):
+        raw = raw[7:]
+        if re.match(r"^/[A-Za-z]:", raw):
+            raw = raw[1:]
+        raw = raw.replace("/", os.sep)
+        if raw.startswith(os.sep + "data" + os.sep + "minimax-h3") or raw.startswith("/data/minimax-h3"):
+            tail = raw.split("minimax-h3", 1)[-1].lstrip("\\/")
+            raw = str(MEDIA_ROOT / tail)
+    p = Path(raw)
+    if p.exists():
+        return p
+    raise FileNotFoundError(f"素材不存在: {uri} -> {p}")
 
 
 def http_json(method: str, url: str, payload=None, timeout: float = 30):
@@ -144,52 +172,105 @@ def interrupt_comfy(prompt_id: str | None = None) -> None:
         if prompt_id:
             http_json("POST", f"{COMFY}/queue", {"delete": [prompt_id]}, timeout=8)
     except Exception as exc:
-        print(f"[fasth3-gguf] queue delete skipped: {exc}", flush=True)
+        print(f"[ref2va-int8] queue delete skipped: {exc}", flush=True)
     try:
         http_json("POST", f"{COMFY}/interrupt", {}, timeout=8)
     except Exception as exc:
-        print(f"[fasth3-gguf] interrupt skipped: {exc}", flush=True)
+        print(f"[ref2va-int8] interrupt skipped: {exc}", flush=True)
 
 
-def build_prompt(job_id: str, prompt: str, width: int, height: int, frames: int, seed: int, steps: int) -> dict:
+def stage_input(src: Path, job_id: str, index: int) -> str:
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
+    suffix = src.suffix.lower() or ".bin"
+    name = f"aishow-{job_id}-{index:02d}{suffix}"
+    dest = COMFY_INPUT / name
+    shutil.copyfile(src, dest)
+    return name
+
+
+def cond_kind(cond: dict) -> str:
+    typ = str(cond.get("type") or "").lower()
+    if typ in ("image", "video", "audio"):
+        return typ
+    uri = str(cond.get("uri") or "").lower()
+    if uri.endswith((".mp4", ".webm", ".mkv", ".mov", ".avi")):
+        return "video"
+    if uri.endswith((".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac")):
+        return "audio"
+    return "image"
+
+
+def ensure_prompt_tags(prompt: str, n_img: int, n_vid: int, n_aud: int) -> str:
+    text = (prompt or "").strip()
+    if re.search(r"<(Picture|Video|Audio)\s+\d+>", text, re.I):
+        return text
+    bits = []
+    for i in range(1, n_img + 1):
+        bits.append(f"<Picture {i}>")
+    audio_n = 1
+    for i in range(1, n_vid + 1):
+        bits.append(f"<Audio {audio_n}>")
+        audio_n += 1
+        bits.append(f"<Video {i}>")
+    for _ in range(n_aud):
+        bits.append(f"<Audio {audio_n}>")
+        audio_n += 1
+    if not bits:
+        return text
+    return "使用 " + "、".join(bits) + " 作为参考。" + (" " + text if text else "")
+
+
+def build_prompt(
+    job_id: str,
+    prompt: str,
+    width: int,
+    height: int,
+    frames: int,
+    seed: int,
+    steps: int,
+    shift_video: float,
+    shift_audio: float,
+    images: list[str],
+    videos: list[str],
+    audios: list[str],
+) -> dict:
     prefix = f"aishow/{job_id}"
-    return {
-        "1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": UNET}},
-        "2": {"class_type": CLIP_LOADER, "inputs": {"clip_name": CLIP, "type": "minimax", "device": "default"}},
+    graph = {
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": UNET, "weight_dtype": "default"},
+        },
+        "2": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": CLIP, "type": "minimax", "device": "default"},
+        },
         "3": {"class_type": "VAELoader", "inputs": {"vae_name": VIDEO_VAE}},
         "4": {"class_type": "VAELoader", "inputs": {"vae_name": AUDIO_VAE}},
         "5": {
             "class_type": "MiniMaxH3SigmaShift",
-            "inputs": {"model": ["1", 0], "shift_video": SHIFT_VIDEO, "shift_audio": SHIFT_AUDIO},
-        },
-        "6": {
-            "class_type": "H3VSAEmbedded",
-            "inputs": {
-                "model": ["5", 0],
-                "topk_ratio": TOPK,
-                "min_tokens": 0,
-                "keep_gates_on_gpu": False,
-            },
+            "inputs": {"model": ["1", 0], "shift_video": shift_video, "shift_audio": shift_audio},
         },
         "7": {
-            "class_type": "MiniMaxH3ImageToVideo",
+            "class_type": "MiniMaxH3ReferenceToVideo",
             "inputs": {
                 "clip": ["2", 0],
                 "vae": ["3", 0],
+                "audio_vae": ["4", 0],
                 "prompt": prompt,
                 "width": width,
                 "height": height,
                 "length": frames,
+                "ref_image_size": "match",
             },
         },
         "8": {
             "class_type": "BasicGuider",
-            "inputs": {"model": ["6", 0], "conditioning": ["7", 0]},
+            "inputs": {"model": ["5", 0], "conditioning": ["7", 0]},
         },
-        "9": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+        "9": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "res_multistep"}},
         "10": {
             "class_type": "BasicScheduler",
-            "inputs": {"model": ["6", 0], "scheduler": "simple", "steps": steps, "denoise": 1.0},
+            "inputs": {"model": ["5", 0], "scheduler": "simple", "steps": steps, "denoise": 1.0},
         },
         "11": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed & 0xFFFFFFFFFFFFFFFF}},
         "12": {
@@ -218,6 +299,27 @@ def build_prompt(job_id: str, prompt: str, width: int, height: int, frames: int,
             },
         },
     }
+    nid = 20
+    ref = graph["7"]["inputs"]
+    for i, name in enumerate(images[:9]):
+        node = str(nid)
+        graph[node] = {"class_type": "LoadImage", "inputs": {"image": name}}
+        ref[f"ref_images.ref_image_{i}"] = [node, 0]
+        nid += 1
+    for i, name in enumerate(videos[:3]):
+        load_id = str(nid)
+        split_id = str(nid + 1)
+        graph[load_id] = {"class_type": "LoadVideo", "inputs": {"file": name}}
+        graph[split_id] = {"class_type": "GetVideoComponents", "inputs": {"video": [load_id, 0]}}
+        ref[f"ref_videos.ref_video_{i}"] = [split_id, 0]
+        ref[f"ref_video_audios.ref_video_audio_{i}"] = [split_id, 1]
+        nid += 2
+    for i, name in enumerate(audios[:3]):
+        node = str(nid)
+        graph[node] = {"class_type": "LoadAudio", "inputs": {"audio": name}}
+        ref[f"ref_audios.ref_audio_{i}"] = [node, 0]
+        nid += 1
+    return graph
 
 
 def submit_prompt(graph: dict, client_id: str) -> str:
@@ -285,7 +387,7 @@ def fallback_video(job_id: str) -> Path | None:
     return None
 
 
-def wait_comfy(job: dict, prompt_id: str, timeout: float = 3600) -> Path:
+def wait_comfy(job: dict, prompt_id: str, timeout: float = 14400) -> Path:
     t0 = time.time()
     last_status = ""
     while time.time() - t0 < timeout:
@@ -294,13 +396,13 @@ def wait_comfy(job: dict, prompt_id: str, timeout: float = 3600) -> Path:
         try:
             entry = history_entry(prompt_id)
         except Exception as exc:
-            print(f"[fasth3-gguf] history poll: {exc}", flush=True)
+            print(f"[ref2va-int8] history poll: {exc}", flush=True)
             time.sleep(2)
             continue
         if entry:
             status = ((entry.get("status") or {}).get("status_str") or "").lower()
             if status and status != last_status:
-                print(f"[fasth3-gguf] comfy {prompt_id} {status}", flush=True)
+                print(f"[ref2va-int8] comfy {prompt_id} {status}", flush=True)
                 last_status = status
             completed = bool((entry.get("status") or {}).get("completed"))
             if status == "error" or (completed and status and status != "success"):
@@ -327,32 +429,64 @@ def wait_comfy(job: dict, prompt_id: str, timeout: float = 3600) -> Path:
 
 def run_job(job_id: str):
     job = JOBS[job_id]
+    job["t0"] = time.time()
     try:
         if job.get("cancel"):
             raise JobCancelled("已取消")
         if not comfy_ready():
-            raise RuntimeError(f"ComfyUI 未就绪，请先开 {COMFY}（start_fasth3_gguf.bat）")
+            raise RuntimeError(f"ComfyUI 未就绪，请先开 {COMFY}（start_h3_ref2va_int8.bat）")
         req = job["request"]
-        seconds = float(req.get("seconds") or 5)
-        width, height, frames = parse_size(req.get("size"), seconds)
-        if req.get("num_frames"):
-            frames = align_frames(int(req["num_frames"]))
-        prompt = (req.get("prompt") or "").strip()
-        if not prompt:
-            raise ValueError("提示词为空")
+        target = req.get("target") or {}
+        seconds = float(target.get("duration_seconds") or req.get("seconds") or 5)
+        seconds = min(max(seconds, 2), 15)
+        short = int(target.get("short_edge") or 480)
+        width, height = canvas(target.get("aspect_ratio"), short)
+        frames = align_frames(int(round(seconds * 24)))
         seed = int(req.get("seed") or 1000)
-        steps = int(req.get("num_inference_steps") or 4)
-        if steps in (0, 5):
-            steps = 4
-        steps = max(4, min(steps, 8))
+        steps = int(req.get("num_inference_steps") or 20)
+        if steps <= 0:
+            steps = 20
+        steps = max(8, min(steps, 50))
+        shift_video = float(req.get("flow_shift") or SHIFT_VIDEO)
+        shift_audio = float(req.get("audio_flow_shift") or SHIFT_AUDIO)
+
+        images: list[str] = []
+        videos: list[str] = []
+        audios: list[str] = []
+        for i, cond in enumerate(req.get("conditions") or []):
+            if not isinstance(cond, dict):
+                continue
+            uri = str(cond.get("uri") or "").strip()
+            if not uri:
+                continue
+            src = parse_uri(uri)
+            name = stage_input(src, job_id, i)
+            kind = cond_kind(cond)
+            if kind == "video":
+                videos.append(name)
+            elif kind == "audio":
+                audios.append(name)
+            else:
+                images.append(name)
+        if not images and not videos and not audios:
+            raise ValueError("参考生成至少需要一张参考图、一段参考视频或一段参考音频")
+
+        prompt = ensure_prompt_tags(req.get("prompt") or "", len(images), len(videos), len(audios))
         job["status"] = "in_progress"
         job["progress"] = 20
-        print(f"[fasth3-gguf] infer {job_id} {width}x{height} frames={frames} steps={steps}", flush=True)
-        graph = build_prompt(job_id, prompt, width, height, frames, seed, steps)
+        print(
+            f"[ref2va-int8] infer {job_id} {width}x{height} frames={frames} steps={steps} "
+            f"img={len(images)} vid={len(videos)} aud={len(audios)}",
+            flush=True,
+        )
+        graph = build_prompt(
+            job_id, prompt, width, height, frames, seed, steps,
+            shift_video, shift_audio, images, videos, audios,
+        )
         prompt_id = submit_prompt(graph, job_id)
         job["prompt_id"] = prompt_id
         job["progress"] = 28
-        print(f"[fasth3-gguf] comfy prompt {prompt_id}", flush=True)
+        print(f"[ref2va-int8] comfy prompt {prompt_id}", flush=True)
         src = wait_comfy(job, prompt_id)
         dest = OUT_DIR / f"{job_id}.mp4"
         OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -360,11 +494,11 @@ def run_job(job_id: str):
         job["path"] = str(dest)
         job["status"] = "completed"
         job["progress"] = 100
-        print(f"[fasth3-gguf] wrote {dest} from {src}", flush=True)
+        print(f"[ref2va-int8] wrote {dest} from {src}", flush=True)
     except JobCancelled:
         job["status"] = "cancelled"
         job["error"] = {"message": "已取消"}
-        print(f"[fasth3-gguf] cancelled {job_id}", flush=True)
+        print(f"[ref2va-int8] cancelled {job_id}", flush=True)
     except Exception as exc:
         job["status"] = "failed"
         job["error"] = {"message": str(exc)}
@@ -374,7 +508,7 @@ def run_job(job_id: str):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
-        print("[fasth3-gguf]", fmt % args)
+        print("[ref2va-int8]", fmt % args)
 
     def _json(self, code, payload):
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -391,7 +525,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {
                 "ok": True,
                 "status": "ok",
-                "model": "fasth3-gguf",
+                "model": "minimax-h3-ref2va-int8",
                 "ready": comfy_ready(),
                 "busy": current is not None,
                 "progress": (current or {}).get("progress", 0),
@@ -422,6 +556,7 @@ class Handler(BaseHTTPRequestHandler):
                 "status": job["status"],
                 "progress": job.get("progress", 0),
                 "error": job.get("error"),
+                "elapsed_sec": int(time.time() - job["t0"]) if job.get("t0") else 0,
             })
             return
         self._json(404, {"error": "not found"})
@@ -441,6 +576,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
             return
         body = json.loads(raw or b"{}")
+        task = str(body.get("task") or "ref2va").lower()
+        if task not in ("ref2va", ""):
+            self._json(400, {"error": "这条 INT8 边车只承接参考生成 ref2va"})
+            return
         job_id = uuid.uuid4().hex
         job = {"id": job_id, "status": "queued", "progress": 5, "request": body}
         with LOCK:
@@ -462,14 +601,15 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    COMFY_INPUT.mkdir(parents=True, exist_ok=True)
     ready = comfy_ready()
-    print(f"[fasth3-gguf] comfy={COMFY} ready={ready}", flush=True)
-    print(f"[fasth3-gguf] unet={UNET} clip={CLIP_LOADER}:{CLIP}", flush=True)
+    print(f"[ref2va-int8] comfy={COMFY} ready={ready}", flush=True)
+    print(f"[ref2va-int8] unet={UNET} clip={CLIP}", flush=True)
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True, name="fasth3-gguf-http").start()
-    print(f"[fasth3-gguf] listening on http://{HOST}:{PORT}", flush=True)
+    threading.Thread(target=httpd.serve_forever, daemon=True, name="ref2va-int8-http").start()
+    print(f"[ref2va-int8] listening on http://{HOST}:{PORT}", flush=True)
     if not ready:
-        print("[fasth3-gguf] 等待 ComfyUI 起来后再投任务", flush=True)
+        print("[ref2va-int8] 等待 ComfyUI 起来后再投任务", flush=True)
     while True:
         run_job(INFER_Q.get())
 

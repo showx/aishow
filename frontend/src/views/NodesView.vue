@@ -3,7 +3,7 @@
     <section class="panel form" v-if="form">
       <div class="intro">
         <h2>对接 MiniMax-H3</h2>
-        <p>本控制面不在本机加载权重，而是调度你已经拉起的 H3-Base、本地 FastH3（ComfyUI GGUF Q4）或 LLaDA-Image。FL2VA 负责本地 t2va / 首尾帧，Ref2VA 负责参考生成。</p>
+        <p>本控制面不在本机加载权重，而是调度你已经拉起的 H3-Base NF4、H3 Ref2VA INT8、本地 FastH3 或 LLaDA-Image。FL2VA 负责本地 t2va / 首尾帧，INT8 边车负责参考生成。</p>
       </div>
 
       <div class="grid">
@@ -86,7 +86,14 @@ D:\code\aishow\scripts\start_llada_image.bat</pre>
       <h2>本机 NF4（DiffSynth）</h2>
       <p>你已经下好的是 DiffSynth-Studio 的 NF4 量化包，不是 SGLang 权重。RTX 3090 Ti 24GB 可以跑 FL2VA（文生 / 首尾帧）。先启动推理边车，再把本页模式改成 auto。</p>
       <pre class="mono">D:\code\aishow\scripts\start_h3_nf4.bat</pre>
-      <p>权重目录：<code>E:\MiniMax-H3\models\MiniMax-H3-NF4</code>。FL2VA 四件套已齐；<code>minimax-h3-ref2va-nf4.safetensors</code> 还是 incomplete，参考生成暂时不能用。下完那个文件后才能开 Ref2VA。</p>
+      <p>权重目录：<code>E:\MiniMax-H3\models\MiniMax-H3-NF4</code>。FL2VA 四件套已齐。参考生成请走下面的 INT8 边车，不要和 NF4 边车抢同一张卡。</p>
+    </section>
+
+    <section class="panel docs">
+      <h2>本机 Ref2VA（Comfy-Org pruned INT8）</h2>
+      <p>工坊选「H3 Ref2VA INT8」后，任务打到 <code>http://127.0.0.1:30011/v1/videos</code>，边车再转给 ComfyUI <code>8188</code>。权重是 <code>minimax_h3_ref2va_pruned_int8_convrot.safetensors</code>。文生请用 FastH3；首尾帧请用 H3-Base NF4。24GB 不要同时加载 NF4 和 INT8。</p>
+      <pre class="mono">D:\code\aishow\scripts\start_h3_ref2va_int8.bat</pre>
+      <p>本页 Ref2VA 地址保持 <code>http://127.0.0.1:30011</code>，推理模式 auto。24GB 先用 480p / 5 秒 / 20 步。</p>
     </section>
 
     <section class="panel docs">

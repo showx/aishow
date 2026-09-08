@@ -78,7 +78,7 @@ func (w *Worker) resumeActive() {
 				err = w.waitRemote(&job, snap.FastH3URL, job.RemoteID)
 			} else {
 				endpoint := snap.SGLANGFL2VAURL
-				if job.Mode == models.ModeRef2VA {
+				if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
 					endpoint = snap.SGLANGRef2VAURL
 				}
 				err = w.waitRemote(&job, endpoint, job.RemoteID)
@@ -169,6 +169,10 @@ func (w *Worker) process(job *models.Job) error {
 	case models.ModeI2VA, models.ModeL2VA, models.ModeFL2VA:
 		task = "fl2va"
 	case models.ModeRef2VA:
+		task = "ref2va"
+		endpoint = snap.SGLANGRef2VAURL
+	}
+	if models.IsH3Ref2VAInt8(job.Engine) {
 		task = "ref2va"
 		endpoint = snap.SGLANGRef2VAURL
 	}

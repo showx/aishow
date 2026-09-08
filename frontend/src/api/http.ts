@@ -1,6 +1,6 @@
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type JobMode = 't2va' | 'i2va' | 'l2va' | 'fl2va' | 'ref2va' | 't2i' | 'i2i'
-export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'llada-image'
+export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-ref2va-int8' | 'llada-image'
 
 export interface JobAsset {
   id: string
@@ -250,11 +250,13 @@ export const engineLabel: Record<JobEngine, string> = {
   h3: 'H3-Base',
   fasth3: 'FastH3',
   'h3-max': 'FastH3',
+  'h3-ref2va-int8': 'H3 Ref2VA INT8',
   'llada-image': 'LLaDA-Image',
 }
 
 export function engineName(engine?: string) {
   if (engine === 'fasth3' || engine === 'h3-max') return engineLabel.fasth3
+  if (engine === 'h3-ref2va-int8') return engineLabel['h3-ref2va-int8']
   if (engine === 'llada-image') return engineLabel['llada-image']
   return engineLabel.h3
 }

@@ -144,7 +144,7 @@ func (s *Server) system(c *gin.Context) {
 	llOK, llLat, llDet := s.ll.Health(snap.LLaDAImageURL)
 	st.Endpoints = []models.EndpointHealth{
 		{Name: "H3-Base FL2VA", URL: snap.SGLANGFL2VAURL, Healthy: flOK, LatencyMS: flLat, Detail: flDet},
-		{Name: "H3-Base Ref2VA", URL: snap.SGLANGRef2VAURL, Healthy: rfOK, LatencyMS: rfLat, Detail: rfDet},
+		{Name: "H3 Ref2VA INT8", URL: snap.SGLANGRef2VAURL, Healthy: rfOK, LatencyMS: rfLat, Detail: rfDet},
 		{Name: "FastH3 · GGUF", URL: snap.FastH3URL, Healthy: fhOK, LatencyMS: fhLat, Detail: fhDet},
 		{Name: "LLaDA-Image", URL: snap.LLaDAImageURL, Healthy: llOK, LatencyMS: llLat, Detail: llDet},
 	}
@@ -286,6 +286,14 @@ func (s *Server) createJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "本地 FastH3 Preview 只支持文生影像"})
 		return
 	}
+	if models.IsH3Ref2VAInt8(engine) && mode != models.ModeRef2VA {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "H3 Ref2VA INT8 只支持参考生成"})
+		return
+	}
+	if engine == models.EngineH3 && mode == models.ModeRef2VA {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参考生成请改选「H3 Ref2VA INT8」；H3-Base 只承接文生和首尾帧"})
+		return
+	}
 	if models.IsImageEngine(engine) && !models.IsImageMode(mode) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "LLaDA-Image 仅支持文生图与指令编辑"})
 		return
@@ -349,6 +357,9 @@ func (s *Server) createJob(c *gin.Context) {
 				in.ShortEdge = 480
 			}
 			in.Steps = 5
+		}
+		if models.IsH3Ref2VAInt8(engine) && (in.Steps == 0 || in.Steps == 50) {
+			in.Steps = 20
 		}
 		if in.ShortEdge < 256 {
 			in.ShortEdge = 256
@@ -530,7 +541,7 @@ func (s *Server) cancelJob(c *gin.Context) {
 			}
 		} else {
 			endpoint := snap.SGLANGFL2VAURL
-			if job.Mode == models.ModeRef2VA {
+			if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
 				endpoint = snap.SGLANGRef2VAURL
 			}
 			if err := s.sg.Cancel(endpoint, job.RemoteID); err != nil {
@@ -658,6 +669,8 @@ func normalizeEngine(raw string) string {
 		return models.EngineH3
 	case models.EngineFastH3, models.EngineH3Max, "fast-h3", "fast_h3", "h3max", "h3_max":
 		return models.EngineFastH3
+	case models.EngineH3Ref2VAInt8, "h3-ref2va", "ref2va-int8", "h3_ref2va_int8":
+		return models.EngineH3Ref2VAInt8
 	case models.EngineLLadaImage, "llada", "llada_image", "lladaimage":
 		return models.EngineLLadaImage
 	default:

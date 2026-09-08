@@ -20,10 +20,11 @@ const (
 	ModeT2I    = "t2i"
 	ModeI2I    = "i2i"
 
-	EngineH3         = "h3"
-	EngineFastH3     = "fasth3"
-	EngineH3Max      = "h3-max"
-	EngineLLadaImage = "llada-image"
+	EngineH3           = "h3"
+	EngineFastH3       = "fasth3"
+	EngineH3Max        = "h3-max"
+	EngineH3Ref2VAInt8 = "h3-ref2va-int8"
+	EngineLLadaImage   = "llada-image"
 
 	RoleAdmin = "admin"
 	RoleUser  = "user"
@@ -215,6 +216,15 @@ type EndpointHealth struct {
 func IsFastH3(engine string) bool {
 	switch strings.ToLower(strings.TrimSpace(engine)) {
 	case EngineFastH3, EngineH3Max, "fast-h3", "fast_h3", "h3max", "h3_max":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsH3Ref2VAInt8(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineH3Ref2VAInt8, "h3-ref2va", "ref2va-int8", "h3_ref2va_int8":
 		return true
 	default:
 		return false
