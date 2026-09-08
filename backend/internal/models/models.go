@@ -24,10 +24,37 @@ const (
 	EngineFastH3     = "fasth3"
 	EngineH3Max      = "h3-max"
 	EngineLLadaImage = "llada-image"
+
+	RoleAdmin = "admin"
+	RoleUser  = "user"
 )
+
+type User struct {
+	ID           string    `gorm:"primaryKey;size:36" json:"id"`
+	Username     string    `gorm:"size:64;uniqueIndex" json:"username"`
+	PasswordHash string    `gorm:"size:100" json:"-"`
+	Role         string    `gorm:"size:16;index" json:"role"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type UserPublic struct {
+	ID        string    `json:"id"`
+	Username  string    `json:"username"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	JobCount  int64     `json:"job_count"`
+}
+
+type Session struct {
+	ID        string    `gorm:"primaryKey;size:64" json:"id"`
+	UserID    string    `gorm:"size:36;index" json:"user_id"`
+	ExpiresAt time.Time `gorm:"index" json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
 
 type Job struct {
 	ID              string     `gorm:"primaryKey;size:36" json:"id"`
+	UserID          string     `gorm:"size:36;index" json:"user_id"`
 	Title           string     `gorm:"size:200" json:"title"`
 	Mode            string     `gorm:"size:32;index" json:"mode"`
 	Engine          string     `gorm:"size:32;index" json:"engine"`
@@ -76,6 +103,7 @@ type JobAsset struct {
 
 type Upload struct {
 	ID        string    `gorm:"primaryKey;size:36" json:"id"`
+	UserID    string    `gorm:"size:36;index" json:"user_id"`
 	Filename  string    `gorm:"size:260" json:"filename"`
 	Mime      string    `gorm:"size:120" json:"mime"`
 	Size      int64     `json:"size"`

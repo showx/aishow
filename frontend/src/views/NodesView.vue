@@ -3,7 +3,7 @@
     <section class="panel form" v-if="form">
       <div class="intro">
         <h2>对接 MiniMax-H3</h2>
-        <p>本控制面不在本机加载权重，而是调度你已经拉起的 H3-Base、本地 FastH3（FastVideo 4-step）或 LLaDA-Image。FL2VA 负责本地 t2va / 首尾帧，Ref2VA 负责参考生成。</p>
+        <p>本控制面不在本机加载权重，而是调度你已经拉起的 H3-Base、本地 FastH3（ComfyUI GGUF Q4）或 LLaDA-Image。FL2VA 负责本地 t2va / 首尾帧，Ref2VA 负责参考生成。</p>
       </div>
 
       <div class="grid">
@@ -76,14 +76,10 @@ D:\code\aishow\scripts\start_llada_image.bat</pre>
     </section>
 
     <section class="panel docs">
-      <h2>本机 FastH3（FastVideo 4-step）</h2>
-      <p>工坊选择「FastH3 本地」后，任务打到本机 <code>/v1/videos</code>，模型别名 <code>fasth3</code>。权重是 <a href="https://huggingface.co/FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2" target="_blank" rel="noreferrer">FastVideo-Minimax-FastH3-Preview-v0.2</a>，采样梯子 <code>[999, 749, 500, 250]</code>。当前 Preview 只蒸馏了文生，没有首尾帧 / 参考生成。</p>
-      <pre class="mono">git clone https://github.com/hao-ai-lab/FastVideo.git
-cd FastVideo
-UV_TORCH_BACKEND=cu126 uv pip install -e ".[fasth3]"
-hf download FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2 --local-dir E:\MiniMax-H3\models\FastVideo-Minimax-FastH3-Preview-v0.2
-D:\code\aishow\scripts\start_fasth3.bat</pre>
-      <p>官方 4 卡路径：<code>fastvideo serve --config D:\code\aishow\scripts\openai_fasth3.yaml</code>。本页 FastH3 地址填 <code>http://127.0.0.1:8000</code>，推理模式改成 auto。</p>
+      <h2>本机 FastH3（GGUF Q4）</h2>
+      <p>24GB 机器走 ComfyUI + Q4 GGUF，不要加载完整 FastVideo Preview。工坊选「FastH3 本地」后，任务打到 <code>http://127.0.0.1:8000/v1/videos</code>，边车再转给 ComfyUI <code>8188</code>。只支持文生，4 步 + VSA。</p>
+      <pre class="mono">D:\code\aishow\scripts\start_fasth3_gguf.bat</pre>
+      <p>权重在 <code>F:\models\fasth3-gguf</code>。本页 FastH3 地址保持 <code>http://127.0.0.1:8000</code>，推理模式改成 auto。完整 bf16 FastVideo 边车仍是 <code>start_fasth3.bat</code>，这台 64GB 内存机器跑不了。</p>
     </section>
 
     <section class="panel docs">

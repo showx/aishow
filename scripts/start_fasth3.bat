@@ -1,6 +1,6 @@
 @echo off
 setlocal
-rem Local FastH3 (FastVideo 4-step distillation of MiniMax-H3).
+rem Local FastH3 (full FastVideo bf16). 24GB + 64GB RAM machines should use start_fasth3_gguf.bat.
 rem Official serve (4 GPU): fastvideo serve --config examples/serving/openai_fasth3.yaml
 rem This sidecar is the Windows / single-process path, same /v1/videos API.
 

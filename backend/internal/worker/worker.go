@@ -47,10 +47,10 @@ func (w *Worker) Start() {
 	if n < 1 {
 		n = 1
 	}
-	for i := 0; i < n; i++ {
-		go w.loop(i + 1)
-	}
 	w.resumeActive()
+	for i := 0; i < n; i++ {
+		go w.loop(i+1, n)
+	}
 }
 
 func (w *Worker) resumeActive() {
@@ -95,9 +95,9 @@ func (w *Worker) resumeActive() {
 	}
 }
 
-func (w *Worker) loop(id int) {
+func (w *Worker) loop(id, slots int) {
 	for {
-		job, err := w.queue.Claim()
+		job, err := w.queue.Claim(slots)
 		if err != nil {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				time.Sleep(1200 * time.Millisecond)
@@ -283,7 +283,7 @@ func (w *Worker) processFastH3(job *models.Job, snap models.SettingsPayload, pro
 		Size:              fmt.Sprintf("%dx%d", width, height),
 		NumFrames:         frames,
 		Seed:              job.Seed,
-		NumInferenceSteps: 5,
+		NumInferenceSteps: 4,
 		GuidanceScale:     1.0,
 	}
 	if err := w.queue.Update(job, map[string]any{"stage": "提交 FastH3", "progress": 22}); err != nil {

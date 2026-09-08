@@ -27,29 +27,42 @@ func (s *Service) Enqueue(job *models.Job) error {
 	return nil
 }
 
-func (s *Service) Claim() (*models.Job, error) {
+func (s *Service) Claim(maxRunning int) (*models.Job, error) {
+	if maxRunning < 1 {
+		maxRunning = 1
+	}
 	var job models.Job
-	if err := s.db.Where("status = ?", models.StatusQueued).
-		Order("priority desc, created_at asc").
-		First(&job).Error; err != nil {
-		return nil, err
-	}
-	now := time.Now()
-	res := s.db.Model(&models.Job{}).
-		Where("id = ? AND status = ?", job.ID, models.StatusQueued).
-		Updates(map[string]any{
-			"status":     models.StatusRunning,
-			"stage":      "认领任务",
-			"progress":   4,
-			"started_at": now,
-		})
-	if res.Error != nil {
-		return nil, res.Error
-	}
-	if res.RowsAffected == 0 {
-		return nil, gorm.ErrRecordNotFound
-	}
-	if err := s.db.Preload("Assets").First(&job, "id = ?", job.ID).Error; err != nil {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var running int64
+		if err := tx.Model(&models.Job{}).Where("status = ?", models.StatusRunning).Count(&running).Error; err != nil {
+			return err
+		}
+		if running >= int64(maxRunning) {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Where("status = ?", models.StatusQueued).
+			Order("priority desc, created_at asc").
+			First(&job).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		res := tx.Model(&models.Job{}).
+			Where("id = ? AND status = ?", job.ID, models.StatusQueued).
+			Updates(map[string]any{
+				"status":     models.StatusRunning,
+				"stage":      "认领任务",
+				"progress":   4,
+				"started_at": now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Preload("Assets").First(&job, "id = ?", job.ID).Error
+	})
+	if err != nil {
 		return nil, err
 	}
 	s.hub.Broadcast("job.updated", job)

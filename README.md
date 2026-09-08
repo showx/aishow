@@ -53,23 +53,17 @@ D:\code\aishow\scripts\start_llada_image.bat
 
 边车监听 `http://127.0.0.1:30020`。工坊选「LLaDA-Image」，推理模式设成 `auto`。
 
-## 本机 FastH3（FastVideo 4-step）
+## 本机 FastH3（GGUF Q4，24GB 推荐）
 
-[FastVideo-Minimax-FastH3-Preview-v0.2](https://huggingface.co/FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2) 是 MiniMax-H3 的 4 步 DMD2 蒸馏，走 FastVideo，不是官方云端 `MiniMax-H3-Max`。当前 Preview 只蒸馏了文生（`t2va`）。
+完整 FastVideo Preview（约 144GB bf16）这台 64GB 内存机器跑不了。24GB 走 ComfyUI + Q4 GGUF + 量化文本编码器。
 
 ```bat
-git clone https://github.com/hao-ai-lab/FastVideo.git E:\FastVideo
-cd /d E:\FastVideo
-UV_TORCH_BACKEND=cu126 uv pip install -e ".[fasth3]"
-hf download FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2 --local-dir E:\MiniMax-H3\models\FastVideo-Minimax-FastH3-Preview-v0.2
-
-set FASTVIDEO_ROOT=E:\FastVideo
-D:\code\aishow\scripts\start_fasth3.bat
+D:\code\aishow\scripts\start_fasth3_gguf.bat
 ```
 
-边车监听 `http://127.0.0.1:8000`（`POST /v1/videos`，模型别名 `fasth3`）。工坊选「FastH3 本地」，推理模式设成 `auto`。
+脚本会拉起 ComfyUI `http://127.0.0.1:8188`，以及 Aishow 边车 `http://127.0.0.1:8000`（`POST /v1/videos`，模型别名 `fasth3`）。工坊选「FastH3 本地」，推理模式设成 `auto`。只支持文生，4 步 + VSA。权重在 `F:\models\fasth3-gguf`。
 
-官方 4 卡路径：`fastvideo serve --config D:\code\aishow\scripts\openai_fasth3.yaml`。单卡 24GB 必须开 DiT offload，训练分辨率是 768×1344 / 124 帧（5 秒），采样梯子 `[999, 749, 500, 250]`。
+完整 FastVideo 边车仍是 `scripts\start_fasth3.bat`。官方 4 卡路径：`fastvideo serve --config D:\code\aishow\scripts\openai_fasth3.yaml`。
 
 ## 启动
 
@@ -87,6 +81,10 @@ npm run dev
 ```
 
 浏览器打开 `http://127.0.0.1:5173`。后端默认在 `http://127.0.0.1:9808`。没有 GPU 时，在「推理节点」把模式改成 `mock`。
+
+局域网同事访问：后端默认监听 `0.0.0.0:9808`（`AISHOW_HOST`），前端开发服务器默认 `0.0.0.0:5173`（`frontend/.env` 的 `VITE_DEV_HOST`）。同一网段打开 `http://<本机局域网IP>:9808`（已构建 `frontend/dist`）或 `:5173`（`npm run dev`）。Windows 需放行对应端口。`AISHOW_PUBLIC_BASE_URL` 给本机推理回源用，保持 `127.0.0.1`。仅本机调试时把 `AISHOW_HOST` / `VITE_DEV_HOST` 改成 `127.0.0.1`。
+
+首次访问会要求创建账号，该账号自动成为管理员。之后在「用户管理」里开账号、改角色、重置密码或删除用户；任务、素材和成片按账号隔离。可在 `backend/.env` 用 `AISHOW_ADMIN_USER` / `AISHOW_ADMIN_PASSWORD` 预置管理员。公开注册开关也在用户管理页。
 
 ## 对接本地 H3-Base
 

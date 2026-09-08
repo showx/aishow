@@ -55,5 +55,14 @@ export const useAppStore = defineStore('app', () => {
     setTimeout(() => { if (notice.value === msg) notice.value = '' }, 2800)
   }
 
-  return { jobs, system, hardware, settings, connected, notice, queued, running, gallery, refresh, refreshMetrics, upsertJob, connectEvents, flash }
+  function reset() {
+    jobs.value = []
+    system.value = null
+    hardware.value = null
+    settings.value = null
+    connected.value = false
+    notice.value = ''
+  }
+
+  return { jobs, system, hardware, settings, connected, notice, queued, running, gallery, refresh, refreshMetrics, upsertJob, connectEvents, flash, reset }
 })

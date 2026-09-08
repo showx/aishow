@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"aishow/internal/api"
+	"aishow/internal/auth"
 	"aishow/internal/config"
 	"aishow/internal/db"
 	"aishow/internal/hub"
@@ -32,6 +33,12 @@ func main() {
 	if err := settings.Seed(conn, cfg); err != nil {
 		log.Fatal(err)
 	}
+	if err := auth.Bootstrap(conn, cfg); err != nil {
+		log.Fatal(err)
+	}
+	if err := auth.EnsureAdmin(conn); err != nil {
+		log.Fatal(err)
+	}
 	store, err := storage.New(cfg)
 	if err != nil {
 		log.Fatal(err)
@@ -43,7 +50,7 @@ func main() {
 	w.Start()
 
 	srv := api.New(cfg, conn, q, store, h, hw)
-	addr := ":" + cfg.Port
+	addr := cfg.ListenAddr()
 	log.Printf("aishow control plane listening on %s", addr)
 	if err := http.ListenAndServe(addr, srv.Router()); err != nil {
 		log.Fatal(err)

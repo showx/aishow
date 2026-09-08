@@ -1,6 +1,8 @@
 package config
 
 import (
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -9,6 +11,7 @@ import (
 )
 
 type Config struct {
+	Host              string
 	Port              string
 	DBPath            string
 	DataDir           string
@@ -23,12 +26,19 @@ type Config struct {
 	MiniMaxAPIToken   string
 	FastH3URL         string
 	LLaDAImageURL     string
+	AdminUser         string
+	AdminPassword     string
+	AllowRegister     bool
+	SessionDays       int
+	CORSOrigins       []string
+	CORSLan           bool
 }
 
 func Load() Config {
 	_ = godotenv.Load()
 
 	cfg := Config{
+		Host:              env("AISHOW_HOST", "0.0.0.0"),
 		Port:              env("AISHOW_PORT", "9808"),
 		DBPath:            env("AISHOW_DB_PATH", "./data/aishow.db"),
 		DataDir:           env("AISHOW_DATA_DIR", "./data"),
@@ -43,11 +53,62 @@ func Load() Config {
 		MiniMaxAPIToken:   env("AISHOW_MINIMAX_API_TOKEN", ""),
 		FastH3URL:         strings.TrimRight(env("AISHOW_FASTH3_URL", "http://127.0.0.1:8000"), "/"),
 		LLaDAImageURL:     strings.TrimRight(env("AISHOW_LLADA_IMAGE_URL", "http://127.0.0.1:30020"), "/"),
+		AdminUser:         env("AISHOW_ADMIN_USER", ""),
+		AdminPassword:     env("AISHOW_ADMIN_PASSWORD", ""),
+		AllowRegister:     envBool("AISHOW_ALLOW_REGISTER", true),
+		SessionDays:       envInt("AISHOW_SESSION_DAYS", 30),
+		CORSOrigins: uniqueStrings(append(
+			[]string{"http://127.0.0.1:5173", "http://localhost:5173"},
+			envList("AISHOW_CORS_ORIGINS")...,
+		)),
+		CORSLan: envBool("AISHOW_CORS_LAN", true),
 	}
 	if cfg.WorkerConcurrency < 1 {
 		cfg.WorkerConcurrency = 1
 	}
+	if cfg.SessionDays < 1 {
+		cfg.SessionDays = 30
+	}
 	return cfg
+}
+
+func (c Config) ListenAddr() string {
+	host := strings.TrimSpace(c.Host)
+	if host == "" {
+		host = "0.0.0.0"
+	}
+	return host + ":" + c.Port
+}
+
+func (c Config) AllowCORSOrigin(origin string) bool {
+	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+	if origin == "" {
+		return false
+	}
+	for _, o := range c.CORSOrigins {
+		if origin == strings.TrimRight(o, "/") {
+			return true
+		}
+	}
+	if c.CORSLan {
+		return isPrivateHTTPOrigin(origin)
+	}
+	return false
+}
+
+func isPrivateHTTPOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	ip := net.ParseIP(u.Hostname())
+	if ip == nil {
+		return false
+	}
+	return ip.IsPrivate() || ip.IsLoopback()
 }
 
 func env(key, fallback string) string {
@@ -55,6 +116,21 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return fallback
+	}
+	switch v {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func envInt(key string, fallback int) int {
@@ -67,4 +143,32 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func envList(key string) []string {
+	var out []string
+	for _, p := range strings.Split(os.Getenv(key), ",") {
+		p = strings.TrimRight(strings.TrimSpace(p), "/")
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func uniqueStrings(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimRight(strings.TrimSpace(s), "/")
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }

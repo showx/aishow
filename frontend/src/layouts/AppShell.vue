@@ -18,6 +18,11 @@
       </nav>
 
       <div class="nav-foot">
+        <div class="account">
+          <div class="who">{{ auth.user?.username || '未登录' }}</div>
+          <button class="btn btn-ghost logout" type="button" @click="openPass">改密</button>
+          <button class="btn btn-ghost logout" type="button" @click="signOut">退出</button>
+        </div>
         <div class="live">
           <span class="dot" :class="store.connected ? 'on' : 'off'"></span>
           {{ store.connected ? '实时通道已连接' : '实时通道断开' }}
@@ -53,16 +58,39 @@
     </main>
 
     <div v-if="store.notice" class="toast">{{ store.notice }}</div>
+
+    <Modal :open="showPass" title="修改密码" kicker="Account" :busy="passBusy" @close="showPass = false">
+      <form id="pass-form" class="pass-form" @submit.prevent="savePass">
+        <div class="field">
+          <label>原密码</label>
+          <input v-model="oldPass" class="input" type="password" autocomplete="current-password" />
+        </div>
+        <div class="field">
+          <label>新密码</label>
+          <input v-model="newPass" class="input" type="password" autocomplete="new-password" />
+        </div>
+        <p v-if="passError" class="pass-error">{{ passError }}</p>
+      </form>
+      <template #footer>
+        <button class="btn btn-ghost" type="button" :disabled="passBusy" @click="showPass = false">取消</button>
+        <button class="btn btn-primary" type="submit" form="pass-form" :disabled="passBusy">{{ passBusy ? '保存中…' : '保存密码' }}</button>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '../stores/app'
+import { useAuthStore } from '../stores/auth'
+import { api } from '../api/http'
+import Modal from '../components/Modal.vue'
 
 const store = useAppStore()
+const auth = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 const clock = ref('')
 let timer = 0
 let poll = 0
@@ -75,6 +103,7 @@ const map: Record<string, { title: string; kicker: string }> = {
   queue: { title: '任务队列', kicker: 'Queue' },
   gallery: { title: '作品库', kicker: 'Gallery' },
   nodes: { title: '推理节点', kicker: 'Nodes' },
+  users: { title: '用户管理', kicker: 'Users' },
 }
 
 const cpuPct = computed(() => Math.round(store.hardware?.cpu_percent || 0))
@@ -90,13 +119,56 @@ const gpuText = computed(() => {
 })
 const title = computed(() => map[String(route.name)]?.title || 'Aishow')
 const kicker = computed(() => map[String(route.name)]?.kicker || 'Aishow')
-const items = computed(() => [
-  { to: '/', label: '指挥台', icon: '⌘', badge: '' },
-  { to: '/studio', label: '生成工坊', icon: '✦', badge: '' },
-  { to: '/queue', label: '任务队列', icon: '☰', badge: String((store.system?.queue_depth || 0) + (store.system?.running || 0) || '') },
-  { to: '/gallery', label: '作品库', icon: '▣', badge: '' },
-  { to: '/nodes', label: '推理节点', icon: '◎', badge: '' },
-])
+const items = computed(() => {
+  const all = [
+    { to: '/', label: '指挥台', icon: '⌘', badge: '' },
+    { to: '/studio', label: '生成工坊', icon: '✦', badge: '' },
+    { to: '/queue', label: '任务队列', icon: '☰', badge: String((store.system?.queue_depth || 0) + (store.system?.running || 0) || '') },
+    { to: '/gallery', label: '作品库', icon: '▣', badge: '' },
+    { to: '/nodes', label: '推理节点', icon: '◎', badge: '' },
+  ]
+  if (auth.isAdmin) all.push({ to: '/users', label: '用户管理', icon: '◍', badge: '' })
+  return all
+})
+const showPass = ref(false)
+const oldPass = ref('')
+const newPass = ref('')
+const passBusy = ref(false)
+const passError = ref('')
+
+function openPass() {
+  oldPass.value = ''
+  newPass.value = ''
+  passError.value = ''
+  showPass.value = true
+}
+
+async function savePass() {
+  passError.value = ''
+  if (newPass.value.length < 6) {
+    passError.value = '新密码至少 6 位'
+    return
+  }
+  passBusy.value = true
+  try {
+    await api.changePassword(oldPass.value, newPass.value)
+    oldPass.value = ''
+    newPass.value = ''
+    showPass.value = false
+    store.flash('密码已更新')
+  } catch (err) {
+    passError.value = err instanceof Error ? err.message : '修改失败'
+  } finally {
+    passBusy.value = false
+  }
+}
+
+async function signOut() {
+  es?.close()
+  es = null
+  await auth.logout()
+  await router.replace({ name: 'login' })
+}
 
 onMounted(async () => {
   const tick = () => {
@@ -167,6 +239,11 @@ nav { display: flex; flex-direction: column; gap: 6px; }
   color: var(--gold);
 }
 .nav-foot { margin-top: auto; display: grid; gap: 10px; }
+.account { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.who { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.logout { padding: 6px 10px; font-size: 12px; }
+.pass-form { display: grid; gap: 14px; }
+.pass-error { color: var(--rose); font-size: 13px; }
 .live { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rose); }
 .dot.on { background: var(--mint); box-shadow: 0 0 12px var(--mint); }
@@ -196,7 +273,7 @@ nav { display: flex; flex-direction: column; gap: 6px; }
 .meter em { display: block; height: 100%; background: var(--mint); }
 .meter.gpu em { background: linear-gradient(90deg, var(--mint), var(--gold)); }
 .toast {
-  position: fixed; right: 24px; bottom: 24px; z-index: 20;
+  position: fixed; right: 24px; bottom: 24px; z-index: 90;
   background: #11151f; border: 1px solid var(--line); padding: 12px 16px; border-radius: 12px;
 }
 @media (max-width: 980px) {

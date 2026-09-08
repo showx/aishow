@@ -22,6 +22,7 @@ const (
 	KeyMiniMaxToken      = "minimax_api_token"
 	KeyFastH3            = "fasth3_url"
 	KeyLLaDAImage        = "llada_image_url"
+	KeyAllowRegister     = "allow_register"
 )
 
 func Seed(db *gorm.DB, cfg config.Config) error {
@@ -37,6 +38,7 @@ func Seed(db *gorm.DB, cfg config.Config) error {
 		KeyMiniMaxToken:      cfg.MiniMaxAPIToken,
 		KeyFastH3:            cfg.FastH3URL,
 		KeyLLaDAImage:        cfg.LLaDAImageURL,
+		KeyAllowRegister:     boolString(cfg.AllowRegister),
 	}
 	for k, v := range defaults {
 		row := models.Setting{Key: k, Value: v}
@@ -111,6 +113,25 @@ func Apply(db *gorm.DB, in models.SettingsPayload) error {
 		}
 	}
 	return nil
+}
+
+func AllowRegister(db *gorm.DB, cfg config.Config) bool {
+	v := strings.ToLower(strings.TrimSpace(Get(db, KeyAllowRegister, "")))
+	if v == "" {
+		return cfg.AllowRegister
+	}
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func SetAllowRegister(db *gorm.DB, on bool) error {
+	return Put(db, KeyAllowRegister, boolString(on))
+}
+
+func boolString(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 
 func atoi(s string) int {

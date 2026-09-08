@@ -46,6 +46,8 @@ func Open(cfg config.Config) (*gorm.DB, error) {
 		return nil, err
 	}
 	if err := conn.AutoMigrate(
+		&models.User{},
+		&models.Session{},
 		&models.Job{},
 		&models.JobAsset{},
 		&models.Upload{},

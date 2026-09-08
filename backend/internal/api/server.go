@@ -46,39 +46,60 @@ func (s *Server) Router() *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery(), gin.Logger())
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
+		AllowOriginFunc:  s.cfg.AllowCORSOrigin,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Disposition"},
-		AllowCredentials: false,
+		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 
 	api := r.Group("/api/v1")
 	{
 		api.GET("/health", s.health)
-		api.GET("/system", s.system)
-		api.GET("/metrics", s.metrics)
-		api.GET("/settings", s.getSettings)
-		api.PUT("/settings", s.putSettings)
-		api.GET("/events", s.events)
-
-		api.POST("/uploads", s.createUpload)
-		api.GET("/uploads/:id", s.getUpload)
-		api.GET("/uploads/:id/raw", s.rawUpload)
-
-		api.POST("/jobs", s.createJob)
-		api.GET("/jobs", s.listJobs)
-		api.GET("/jobs/:id", s.getJob)
-		api.POST("/jobs/:id/cancel", s.cancelJob)
-		api.POST("/jobs/:id/retry", s.retryJob)
-		api.POST("/jobs/:id/bump", s.bumpJob)
-		api.DELETE("/jobs/:id", s.deleteJob)
-		api.GET("/jobs/:id/video", s.jobVideo)
-		api.GET("/jobs/:id/image", s.jobImage)
-		api.GET("/jobs/:id/events", s.jobEvents)
-
+		api.GET("/auth/status", s.authStatus)
+		api.POST("/auth/login", s.login)
+		api.POST("/auth/register", s.register)
+		api.POST("/auth/logout", s.logout)
+		// 推理边车按 HTTP URI 回源拉素材，不能走浏览器会话。
 		api.GET("/media/:jobId/:name", s.mediaFile)
+
+		authed := api.Group("")
+		authed.Use(s.requireAuth)
+		{
+			authed.GET("/auth/me", s.me)
+			authed.POST("/auth/password", s.changePassword)
+			authed.GET("/system", s.system)
+			authed.GET("/metrics", s.metrics)
+			authed.GET("/settings", s.getSettings)
+			authed.PUT("/settings", s.putSettings)
+			authed.GET("/events", s.events)
+
+			authed.POST("/uploads", s.createUpload)
+			authed.GET("/uploads/:id", s.getUpload)
+			authed.GET("/uploads/:id/raw", s.rawUpload)
+
+			authed.POST("/jobs", s.createJob)
+			authed.GET("/jobs", s.listJobs)
+			authed.GET("/jobs/:id", s.getJob)
+			authed.POST("/jobs/:id/cancel", s.cancelJob)
+			authed.POST("/jobs/:id/retry", s.retryJob)
+			authed.POST("/jobs/:id/bump", s.bumpJob)
+			authed.DELETE("/jobs/:id", s.deleteJob)
+			authed.GET("/jobs/:id/video", s.jobVideo)
+			authed.GET("/jobs/:id/image", s.jobImage)
+			authed.GET("/jobs/:id/events", s.jobEvents)
+
+			admin := authed.Group("")
+			admin.Use(s.requireAdmin)
+			{
+				admin.GET("/users", s.listUsers)
+				admin.POST("/users", s.createManagedUser)
+				admin.PATCH("/users/:id", s.patchUser)
+				admin.DELETE("/users/:id", s.deleteUser)
+				admin.PUT("/auth/register-policy", s.putRegisterPolicy)
+			}
+		}
 	}
 
 	dist := filepath.Clean(filepath.Join("..", "frontend", "dist"))
@@ -103,6 +124,7 @@ func (s *Server) health(c *gin.Context) {
 func (s *Server) system(c *gin.Context) {
 	snap := settings.Snapshot(s.db, s.cfg)
 	today := time.Now().Truncate(24 * time.Hour)
+	uid := currentUserID(c)
 	st := models.SystemStatus{
 		App:           "Aishow",
 		Version:       "0.1.0",
@@ -110,11 +132,11 @@ func (s *Server) system(c *gin.Context) {
 		WorkerSlots:   snap.WorkerConcurrency,
 		Time:          time.Now(),
 	}
-	s.db.Model(&models.Job{}).Where("status = ?", models.StatusQueued).Count(&st.QueueDepth)
-	s.db.Model(&models.Job{}).Where("status = ?", models.StatusRunning).Count(&st.Running)
-	s.db.Model(&models.Job{}).Where("status = ? AND finished_at >= ?", models.StatusSucceeded, today).Count(&st.SucceededToday)
-	s.db.Model(&models.Job{}).Where("status = ? AND finished_at >= ?", models.StatusFailed, today).Count(&st.FailedToday)
-	s.db.Model(&models.Job{}).Count(&st.TotalJobs)
+	s.db.Model(&models.Job{}).Where("user_id = ? AND status = ?", uid, models.StatusQueued).Count(&st.QueueDepth)
+	s.db.Model(&models.Job{}).Where("user_id = ? AND status = ?", uid, models.StatusRunning).Count(&st.Running)
+	s.db.Model(&models.Job{}).Where("user_id = ? AND status = ? AND finished_at >= ?", uid, models.StatusSucceeded, today).Count(&st.SucceededToday)
+	s.db.Model(&models.Job{}).Where("user_id = ? AND status = ? AND finished_at >= ?", uid, models.StatusFailed, today).Count(&st.FailedToday)
+	s.db.Model(&models.Job{}).Where("user_id = ?", uid).Count(&st.TotalJobs)
 
 	flOK, flLat, flDet := s.sg.Health(snap.SGLANGFL2VAURL)
 	rfOK, rfLat, rfDet := s.sg.Health(snap.SGLANGRef2VAURL)
@@ -123,7 +145,7 @@ func (s *Server) system(c *gin.Context) {
 	st.Endpoints = []models.EndpointHealth{
 		{Name: "H3-Base FL2VA", URL: snap.SGLANGFL2VAURL, Healthy: flOK, LatencyMS: flLat, Detail: flDet},
 		{Name: "H3-Base Ref2VA", URL: snap.SGLANGRef2VAURL, Healthy: rfOK, LatencyMS: rfLat, Detail: rfDet},
-		{Name: "FastH3 · FastVideo", URL: snap.FastH3URL, Healthy: fhOK, LatencyMS: fhLat, Detail: fhDet},
+		{Name: "FastH3 · GGUF", URL: snap.FastH3URL, Healthy: fhOK, LatencyMS: fhLat, Detail: fhDet},
 		{Name: "LLaDA-Image", URL: snap.LLaDAImageURL, Healthy: llOK, LatencyMS: llLat, Detail: llDet},
 	}
 	st.Hardware = s.hw.Snapshot()
@@ -172,6 +194,9 @@ func (s *Server) events(c *gin.Context) {
 			if !ok {
 				return
 			}
+			if !eventVisibleTo(payload, currentUserID(c)) {
+				continue
+			}
 			c.Writer.Write([]byte("event: message\n"))
 			c.Writer.Write([]byte("data: "))
 			c.Writer.Write(payload)
@@ -205,6 +230,7 @@ func (s *Server) createUpload(c *gin.Context) {
 	}
 	up := models.Upload{
 		ID:        id,
+		UserID:    currentUserID(c),
 		Filename:  file.Filename,
 		Mime:      mime,
 		Size:      n,
@@ -220,18 +246,16 @@ func (s *Server) createUpload(c *gin.Context) {
 }
 
 func (s *Server) getUpload(c *gin.Context) {
-	var up models.Upload
-	if err := s.db.First(&up, "id = ?", c.Param("id")).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	up, ok := s.ownedUpload(c, c.Param("id"))
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, up)
 }
 
 func (s *Server) rawUpload(c *gin.Context) {
-	var up models.Upload
-	if err := s.db.First(&up, "id = ?", c.Param("id")).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	up, ok := s.ownedUpload(c, c.Param("id"))
+	if !ok {
 		return
 	}
 	c.File(up.Path)
@@ -364,6 +388,7 @@ func (s *Server) createJob(c *gin.Context) {
 	}
 	job := models.Job{
 		ID:             uuid.NewString(),
+		UserID:         currentUserID(c),
 		Title:          title,
 		Mode:           mode,
 		Engine:         engine,
@@ -384,7 +409,7 @@ func (s *Server) createJob(c *gin.Context) {
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
-	assets, err := s.buildAssets(job.ID, mode, in.Conditions)
+	assets, err := s.buildAssets(job.ID, currentUserID(c), mode, in.Conditions)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -399,14 +424,14 @@ func (s *Server) createJob(c *gin.Context) {
 	c.JSON(http.StatusOK, job)
 }
 
-func (s *Server) buildAssets(jobID, mode string, conds []models.AssetCondition) ([]models.JobAsset, error) {
+func (s *Server) buildAssets(jobID, userID, mode string, conds []models.AssetCondition) ([]models.JobAsset, error) {
 	var assets []models.JobAsset
 	for _, cnd := range conds {
 		if cnd.UploadID == "" {
 			continue
 		}
 		var up models.Upload
-		if err := s.db.First(&up, "id = ?", cnd.UploadID).Error; err != nil {
+		if err := s.db.First(&up, "id = ? AND user_id = ?", cnd.UploadID, userID).Error; err != nil {
 			return nil, fmt.Errorf("素材不存在: %s", cnd.UploadID)
 		}
 		typ := cnd.Type
@@ -456,7 +481,7 @@ func (s *Server) listJobs(c *gin.Context) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	q := s.db.Preload("Assets").Order("created_at desc").Limit(limit)
+	q := s.db.Preload("Assets").Where("user_id = ?", currentUserID(c)).Order("created_at desc").Limit(limit)
 	if status != "" {
 		q = q.Where("status = ?", status)
 	}
@@ -475,22 +500,20 @@ func (s *Server) listJobs(c *gin.Context) {
 }
 
 func (s *Server) getJob(c *gin.Context) {
-	var job models.Job
-	if err := s.db.Preload("Assets").Preload("Events").First(&job, "id = ?", c.Param("id")).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	job, ok := s.ownedJob(c, true)
+	if !ok {
 		return
 	}
-	job.QueuePosition = s.queue.Position(job)
+	job.QueuePosition = s.queue.Position(*job)
 	c.JSON(http.StatusOK, job)
 }
 
 func (s *Server) cancelJob(c *gin.Context) {
-	id := c.Param("id")
-	var job models.Job
-	if err := s.db.First(&job, "id = ?", id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	job, ok := s.ownedJob(c, false)
+	if !ok {
 		return
 	}
+	id := job.ID
 	if job.RemoteID != "" {
 		snap := settings.Snapshot(s.db, s.cfg)
 		if models.IsImageEngine(job.Engine) {
@@ -525,6 +548,9 @@ func (s *Server) cancelJob(c *gin.Context) {
 }
 
 func (s *Server) retryJob(c *gin.Context) {
+	if _, ok := s.ownedJob(c, false); !ok {
+		return
+	}
 	job, err := s.queue.Retry(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -534,6 +560,9 @@ func (s *Server) retryJob(c *gin.Context) {
 }
 
 func (s *Server) bumpJob(c *gin.Context) {
+	if _, ok := s.ownedJob(c, false); !ok {
+		return
+	}
 	job, err := s.queue.Bump(c.Param("id"), 1)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -543,7 +572,11 @@ func (s *Server) bumpJob(c *gin.Context) {
 }
 
 func (s *Server) deleteJob(c *gin.Context) {
-	id := c.Param("id")
+	job, ok := s.ownedJob(c, false)
+	if !ok {
+		return
+	}
+	id := job.ID
 	s.db.Where("job_id = ?", id).Delete(&models.JobEvent{})
 	s.db.Where("job_id = ?", id).Delete(&models.JobAsset{})
 	s.db.Delete(&models.Job{}, "id = ?", id)
@@ -561,9 +594,8 @@ func (s *Server) jobImage(c *gin.Context) {
 }
 
 func (s *Server) serveOutput(c *gin.Context, image bool) {
-	var job models.Job
-	if err := s.db.First(&job, "id = ?", c.Param("id")).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+	job, ok := s.ownedJob(c, false)
+	if !ok {
 		return
 	}
 	path := job.OutputPath
@@ -582,9 +614,34 @@ func (s *Server) serveOutput(c *gin.Context, image bool) {
 }
 
 func (s *Server) jobEvents(c *gin.Context) {
+	if _, ok := s.ownedJob(c, false); !ok {
+		return
+	}
 	var events []models.JobEvent
 	s.db.Where("job_id = ?", c.Param("id")).Order("id asc").Find(&events)
 	c.JSON(http.StatusOK, events)
+}
+
+func (s *Server) ownedJob(c *gin.Context, withDetails bool) (*models.Job, bool) {
+	q := s.db
+	if withDetails {
+		q = q.Preload("Assets").Preload("Events")
+	}
+	var job models.Job
+	if err := q.First(&job, "id = ? AND user_id = ?", c.Param("id"), currentUserID(c)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return nil, false
+	}
+	return &job, true
+}
+
+func (s *Server) ownedUpload(c *gin.Context, id string) (*models.Upload, bool) {
+	var up models.Upload
+	if err := s.db.First(&up, "id = ? AND user_id = ?", id, currentUserID(c)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return nil, false
+	}
+	return &up, true
 }
 
 func validMode(m string) bool {

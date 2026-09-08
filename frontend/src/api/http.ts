@@ -126,8 +126,35 @@ export interface SettingsPayload {
   llada_image_url: string
 }
 
+export interface User {
+  id: string
+  username: string
+  role?: 'admin' | 'user' | string
+  created_at: string
+  job_count?: number
+}
+
+export interface UserList {
+  users: User[]
+  allow_register: boolean
+}
+
+export interface AuthStatus {
+  has_users: boolean
+  allow_register: boolean
+}
+
+let onUnauthorized: (() => void) | null = null
+
+export function setUnauthorizedHandler(fn: () => void) {
+  onUnauthorized = fn
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
+  const res = await fetch(url, { ...init, credentials: 'include' })
+  if (res.status === 401 && !/\/api\/v1\/auth\/(login|register|status|logout|me|password)(\?|$)/.test(url)) {
+    onUnauthorized?.()
+  }
   if (!res.ok) {
     let msg = res.statusText
     try {
@@ -140,6 +167,47 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  authStatus: () => request<AuthStatus>('/api/v1/auth/status'),
+  me: () => request<User>('/api/v1/auth/me'),
+  login: (username: string, password: string) =>
+    request<User>('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }),
+  register: (username: string, password: string) =>
+    request<User>('/api/v1/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<{ ok: boolean }>('/api/v1/auth/logout', { method: 'POST' }),
+  changePassword: (old_password: string, new_password: string) =>
+    request<{ ok: boolean }>('/api/v1/auth/password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_password, new_password }),
+    }),
+  users: () => request<UserList>('/api/v1/users'),
+  createUser: (body: { username: string; password: string; role?: string }) =>
+    request<User>('/api/v1/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  patchUser: (id: string, body: { password?: string; role?: string }) =>
+    request<User>(`/api/v1/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  deleteUser: (id: string) => request<{ ok: boolean }>(`/api/v1/users/${id}`, { method: 'DELETE' }),
+  setRegisterPolicy: (allow_register: boolean) =>
+    request<{ allow_register: boolean }>('/api/v1/auth/register-policy', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allow_register }),
+    }),
   system: () => request<SystemStatus>('/api/v1/system'),
   metrics: () => request<Hardware>('/api/v1/metrics'),
   settings: () => request<SettingsPayload>('/api/v1/settings'),

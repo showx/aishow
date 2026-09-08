@@ -2,7 +2,12 @@
   <div class="studio">
     <section class="panel composer">
       <div class="seg">
-        <button v-for="e in engines" :key="e.id" :class="{ active: form.engine === e.id }" @click="setEngine(e.id)">{{ e.label }}</button>
+        <button
+          v-for="e in visibleEngines"
+          :key="e.id"
+          :class="{ active: form.engine === e.id, offline: !e.online }"
+          @click="pickEngine(e.id)"
+        >{{ e.label }}<small>{{ e.online ? '在线' : '离线' }}</small></button>
       </div>
       <p class="hint">{{ engineHint }}</p>
 
@@ -117,12 +122,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import DropZone from '../components/DropZone.vue'
 import { api, canvasSize, engineName, isImageJob, resolutionLabel, resolutionPresets, statusLabel, type Job, type JobEngine, type JobMode } from '../api/http'
 import { useAppStore } from '../stores/app'
 
 const store = useAppStore()
+const route = useRoute()
+const router = useRouter()
 const busy = ref(false)
 const firstFrame = ref<File | null>(null)
 const lastFrame = ref<File | null>(null)
@@ -135,6 +143,9 @@ const engines = [
   { id: 'fasth3' as JobEngine, label: 'FastH3 本地' },
   { id: 'llada-image' as JobEngine, label: 'LLaDA-Image' },
 ]
+const enginePref: JobEngine[] = ['fasth3', 'h3', 'llada-image']
+const userPickedEngine = ref(false)
+const autoPickedEngine = ref(false)
 const modes = [
   { id: 't2va' as JobMode, label: '文生影像' },
   { id: 'i2va' as JobMode, label: '首帧续写' },
@@ -171,7 +182,7 @@ const imageExamples = [
 const form = reactive({
   engine: 'h3' as JobEngine,
   mode: 't2va' as JobMode,
-  prompt: videoExamples[0],
+  prompt: '',
   duration: 5,
   aspect_ratio: '16:9',
   short_edge: 480,
@@ -183,6 +194,49 @@ const form = reactive({
   enhance_prompt: false,
   priority: 0,
 })
+
+const engineOnline = computed(() => {
+  const map: Record<JobEngine, boolean> = {
+    h3: false,
+    fasth3: false,
+    'h3-max': false,
+    'llada-image': false,
+  }
+  for (const ep of store.system?.endpoints || []) {
+    if (!ep.healthy) continue
+    const name = (ep.name || '').toLowerCase()
+    if (name.includes('fasth3')) map.fasth3 = true
+    else if (name.includes('llada')) map['llada-image'] = true
+    else if (name.includes('fl2va') || name.includes('ref2va') || name.includes('h3-base')) map.h3 = true
+  }
+  return map
+})
+const visibleEngines = computed(() =>
+  engines
+    .map(e => ({ ...e, online: !!engineOnline.value[e.id] }))
+    .sort((a, b) => {
+      if (a.online !== b.online) return a.online ? -1 : 1
+      return enginePref.indexOf(a.id) - enginePref.indexOf(b.id)
+    }),
+)
+
+function preferredOnlineEngine(): JobEngine {
+  const online = enginePref.filter(id => engineOnline.value[id])
+  return online[0] || 'h3'
+}
+
+function pickEngine(id: JobEngine) {
+  userPickedEngine.value = true
+  setEngine(id)
+}
+
+function applyOnlineDefault() {
+  if (autoPickedEngine.value || userPickedEngine.value || route.query.reuse) return
+  if (!enginePref.some(id => engineOnline.value[id])) return
+  autoPickedEngine.value = true
+  const next = preferredOnlineEngine()
+  if (next !== form.engine) setEngine(next)
+}
 
 const isFastH3 = computed(() => form.engine === 'fasth3' || form.engine === 'h3-max')
 const isLLada = computed(() => form.engine === 'llada-image')
@@ -202,18 +256,20 @@ const visibleRatios = computed(() => {
 })
 const minDuration = computed(() => 2)
 const engineHint = computed(() => {
-  if (isLLada.value) return 'LLaDA-Image 是开源 6B 文生图 / 指令编辑模型。先启动本机边车，再把推理模式设成 auto。'
-  if (isFastH3.value) return '本地 FastH3 Preview（FastVideo 4-step 蒸馏 MiniMax-H3）。只蒸馏了文生；采样走 [999, 749, 500, 250]。先启动 FastH3 边车。'
-  return '本地 H3-Base / NF4 走 SGLang 或 DiffSynth 边车。'
+  const online = engineOnline.value[form.engine]
+  const offline = online ? '' : '当前节点离线，请改选带「在线」的引擎。'
+  if (isLLada.value) return ['LLaDA-Image 是开源 6B 文生图 / 指令编辑模型。先启动本机边车，再把推理模式设成 auto。', offline].filter(Boolean).join(' ')
+  if (isFastH3.value) return ['本地 FastH3 GGUF Q4（ComfyUI 4-step + VSA）。只支持文生。先跑 start_fasth3_gguf.bat，推理模式设成 auto。', offline].filter(Boolean).join(' ')
+  return ['本地 H3-Base / NF4 走 SGLang 或 DiffSynth 边车。', offline].filter(Boolean).join(' ')
 })
 const resolutionHint = computed(() => {
   if (isLLada.value) return '文生图边长需能被 16 整除；指令编辑需能被 32 整除。默认 1024。'
-  if (isFastH3.value) return '训练分辨率是 768×1344 / 5 秒。480p 更快；单卡 24GB 可能需要 offload。'
+  if (isFastH3.value) return '训练分辨率是 768×1344 / 5 秒。24GB 建议先用 480p / 5 秒试一条。'
   return 'NF4 24GB 推荐 480p；720p / 1080p 更慢，也可能撑满显存。'
 })
 const actionHint = computed(() => {
   if (isLLada.value) return '将任务投入队列，由工位调用本机 LLaDA-Image /v1/images。'
-  if (isFastH3.value) return '将任务投入队列，由工位调用本地 FastH3 /v1/videos（模型别名 fasth3）。'
+  if (isFastH3.value) return '将任务投入队列，由工位调用 FastH3 GGUF 边车 /v1/videos（模型别名 fasth3）。'
   return '将生成任务投入本地队列，由工位顺序调用 SGLang /v1/videos。'
 })
 const needFirst = computed(() => form.mode === 'i2va' || form.mode === 'fl2va')
@@ -245,7 +301,7 @@ function setEngine(id: JobEngine) {
   if (form.steps === 4) form.steps = 50
   if (id === 'fasth3' || id === 'h3-max') {
     form.mode = 't2va'
-    form.steps = 5
+    form.steps = 4
     form.short_edge = form.short_edge >= 640 ? 768 : 480
     if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
   }
@@ -268,7 +324,86 @@ async function uploadIf(file: File | null) {
   return api.upload(file)
 }
 
+function asEngine(engine?: string): JobEngine {
+  if (engine === 'fasth3' || engine === 'h3-max') return 'fasth3'
+  if (engine === 'llada-image') return 'llada-image'
+  return 'h3'
+}
+
+async function fileFromUpload(uploadId: string, filename: string) {
+  try {
+    const res = await fetch(`/api/v1/uploads/${uploadId}/raw`, { credentials: 'include' })
+    if (!res.ok) return null
+    const blob = await res.blob()
+    return new File([blob], filename || 'asset', { type: blob.type || 'application/octet-stream' })
+  } catch {
+    return null
+  }
+}
+
+async function applyHistory(id: string) {
+  let job: Job | undefined = store.jobs.find(j => j.id === id)
+  try {
+    job = await api.job(id)
+  } catch {
+    if (!job) {
+      store.flash('找不到这条历史任务')
+      return
+    }
+  }
+  if (!job) return
+  form.engine = asEngine(job.engine)
+  form.mode = job.mode
+  form.prompt = job.prompt
+  form.duration = job.duration || 5
+  form.aspect_ratio = job.aspect_ratio || (form.engine === 'llada-image' ? '1:1' : '16:9')
+  form.short_edge = job.short_edge
+  form.seed = job.seed
+  form.steps = job.steps
+  form.flow_shift = job.flow_shift
+  form.audio_flow_shift = job.audio_flow_shift
+  form.quality = job.quality
+  form.enhance_prompt = job.enhance_prompt
+  form.priority = job.priority
+  firstFrame.value = null
+  lastFrame.value = null
+  refImage.value = null
+  refVideo.value = null
+  refAudio.value = null
+  for (const asset of job.assets || []) {
+    const file = await fileFromUpload(asset.upload_id, asset.filename)
+    if (!file) continue
+    if (asset.role === 'keyframe' && asset.frame_index === -1) lastFrame.value = file
+    else if (asset.role === 'keyframe') firstFrame.value = file
+    else if (asset.type === 'video') refVideo.value = file
+    else if (asset.type === 'audio') refAudio.value = file
+    else refImage.value = file
+  }
+  store.flash('已载入历史参数')
+}
+
+watch(() => String(route.query.reuse || ''), async (id) => {
+  if (!id) return
+  userPickedEngine.value = true
+  await applyHistory(id)
+  router.replace({ name: 'studio' })
+}, { immediate: true })
+
+watch(
+  () => (store.system?.endpoints || []).map(ep => `${ep.name}:${ep.healthy}`).join('|'),
+  applyOnlineDefault,
+  { immediate: true },
+)
+
+onMounted(() => {
+  api.system().then(s => { store.system = s }).catch(() => {})
+})
+
 async function submit() {
+  if (!form.prompt.trim()) {
+    store.flash(isLLada.value ? '请填写画面提示' : '请填写镜头提示')
+    return
+  }
   if (needFirst.value && !firstFrame.value) {
     store.flash('请上传首帧')
     return
@@ -340,6 +475,15 @@ async function submit() {
 .muted { color: var(--muted); font-size: 13px; }
 .hint { font-size: 12px; color: var(--faint); line-height: 1.5; }
 .ticks { margin-top: 4px; }
+.seg button.offline { opacity: 0.58; }
+.seg button small {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
 .item { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .item-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .bar { margin-top: 8px; height: 5px; background: rgba(255,255,255,0.08); border-radius: 99px; overflow: hidden; }
