@@ -29,6 +29,17 @@ type VideoRequest struct {
 	Seed                int64       `json:"seed"`
 }
 
+type FastH3Request struct {
+	Model             string  `json:"model"`
+	Prompt            string  `json:"prompt"`
+	Seconds           int     `json:"seconds"`
+	Size              string  `json:"size,omitempty"`
+	NumFrames         int     `json:"num_frames,omitempty"`
+	Seed              int64   `json:"seed"`
+	NumInferenceSteps int     `json:"num_inference_steps"`
+	GuidanceScale     float64 `json:"guidance_scale"`
+}
+
 type Condition struct {
 	Type             string   `json:"type"`
 	URI              string   `json:"uri"`
@@ -92,6 +103,10 @@ func (c *Client) Health(base string) (bool, int64, string) {
 }
 
 func (c *Client) Create(base string, body VideoRequest) (*CreateResponse, error) {
+	return c.CreateJSON(base, body)
+}
+
+func (c *Client) CreateJSON(base string, body any) (*CreateResponse, error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -146,21 +161,37 @@ func (c *Client) Cancel(base, id string) error {
 	if id == "" {
 		return nil
 	}
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+"/v1/videos/"+id+"/cancel", nil)
+	base = strings.TrimRight(base, "/")
+	client := &http.Client{Timeout: 8 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, base+"/v1/videos/"+id+"/cancel", nil)
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("sglang cancel %d: %s", resp.StatusCode, clip(b, 400))
+	resp.Body.Close()
+	if resp.StatusCode < 300 {
+		return nil
 	}
-	return nil
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		del, err := http.NewRequest(http.MethodDelete, base+"/v1/videos/"+id, nil)
+		if err != nil {
+			return err
+		}
+		resp, err = client.Do(del)
+		if err != nil {
+			return err
+		}
+		b, _ = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode < 300 {
+			return nil
+		}
+	}
+	return fmt.Errorf("sglang cancel %d: %s", resp.StatusCode, clip(b, 400))
 }
 
 func (c *Client) Download(base, id, dest string) (int64, error) {

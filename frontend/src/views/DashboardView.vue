@@ -39,7 +39,7 @@
       <article class="panel block">
         <div class="row-head">
           <h2>推理链路</h2>
-          <span class="pill">MiniMax-H3 Base · 768p</span>
+          <span class="pill">H3 + LLaDA-Image</span>
         </div>
         <div class="nodes">
           <div v-for="ep in store.system?.endpoints || []" :key="ep.name" class="node">
@@ -54,7 +54,7 @@
           </div>
         </div>
         <p class="note">
-          FL2VA 节点承接文生 / 首尾帧；Ref2VA 节点承接参考图、视频与音频。本地默认输出短边 768、24fps、32kHz 立体声。
+          FL2VA 承接本地文生 / 首尾帧；Ref2VA 承接参考素材；FastH3 走本机 FastVideo 4-step；LLaDA-Image 承接开源文生图。
         </p>
       </article>
 
@@ -86,7 +86,8 @@
       <div class="recent">
         <router-link v-for="job in recent" :key="job.id" class="clip" to="/gallery">
           <div class="poster">
-            <span class="play">▶</span>
+            <img v-if="job.has_image" :src="`/api/v1/jobs/${job.id}/image`" alt="" />
+            <span v-else class="play">▶</span>
             <span class="tag">{{ modeLabel[job.mode] }}</span>
           </div>
           <div class="clip-name">{{ job.title }}</div>
@@ -157,7 +158,9 @@ const gpuMemPct = computed(() => {
     #12151d;
   position: relative;
   margin-bottom: 8px;
+  overflow: hidden;
 }
+.poster img { width: 100%; height: 100%; object-fit: cover; }
 .play { position: absolute; left: 12px; bottom: 10px; color: #fff; }
 .tag { position: absolute; right: 10px; top: 10px; font-size: 11px; color: var(--mint); }
 .clip-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

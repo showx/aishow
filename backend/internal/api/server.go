@@ -12,6 +12,7 @@ import (
 
 	"aishow/internal/config"
 	"aishow/internal/hub"
+	"aishow/internal/llada"
 	"aishow/internal/metrics"
 	"aishow/internal/models"
 	"aishow/internal/queue"
@@ -32,11 +33,12 @@ type Server struct {
 	store *storage.Store
 	hub   *hub.Hub
 	sg    *sglang.Client
+	ll    *llada.Client
 	hw    *metrics.Collector
 }
 
 func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store, h *hub.Hub, hw *metrics.Collector) *Server {
-	return &Server{cfg: cfg, db: db, queue: q, store: store, hub: h, sg: sglang.New(), hw: hw}
+	return &Server{cfg: cfg, db: db, queue: q, store: store, hub: h, sg: sglang.New(), ll: llada.New(), hw: hw}
 }
 
 func (s *Server) Router() *gin.Engine {
@@ -73,6 +75,7 @@ func (s *Server) Router() *gin.Engine {
 		api.POST("/jobs/:id/bump", s.bumpJob)
 		api.DELETE("/jobs/:id", s.deleteJob)
 		api.GET("/jobs/:id/video", s.jobVideo)
+		api.GET("/jobs/:id/image", s.jobImage)
 		api.GET("/jobs/:id/events", s.jobEvents)
 
 		api.GET("/media/:jobId/:name", s.mediaFile)
@@ -115,9 +118,13 @@ func (s *Server) system(c *gin.Context) {
 
 	flOK, flLat, flDet := s.sg.Health(snap.SGLANGFL2VAURL)
 	rfOK, rfLat, rfDet := s.sg.Health(snap.SGLANGRef2VAURL)
+	fhOK, fhLat, fhDet := s.sg.Health(snap.FastH3URL)
+	llOK, llLat, llDet := s.ll.Health(snap.LLaDAImageURL)
 	st.Endpoints = []models.EndpointHealth{
 		{Name: "H3-Base FL2VA", URL: snap.SGLANGFL2VAURL, Healthy: flOK, LatencyMS: flLat, Detail: flDet},
 		{Name: "H3-Base Ref2VA", URL: snap.SGLANGRef2VAURL, Healthy: rfOK, LatencyMS: rfLat, Detail: rfDet},
+		{Name: "FastH3 · FastVideo", URL: snap.FastH3URL, Healthy: fhOK, LatencyMS: fhLat, Detail: fhDet},
+		{Name: "LLaDA-Image", URL: snap.LLaDAImageURL, Healthy: llOK, LatencyMS: llLat, Detail: llDet},
 	}
 	st.Hardware = s.hw.Snapshot()
 	c.JSON(http.StatusOK, st)
@@ -246,35 +253,97 @@ func (s *Server) createJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的生成模式"})
 		return
 	}
+	engine := normalizeEngine(in.Engine)
+	if engine == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的生成引擎"})
+		return
+	}
+	if models.IsFastH3(engine) && mode != models.ModeT2VA {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "本地 FastH3 Preview 只支持文生影像"})
+		return
+	}
+	if models.IsImageEngine(engine) && !models.IsImageMode(mode) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "LLaDA-Image 仅支持文生图与指令编辑"})
+		return
+	}
+	if !models.IsImageEngine(engine) && models.IsImageMode(mode) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "文生图 / 指令编辑请选择 LLaDA-Image"})
+		return
+	}
 	if strings.TrimSpace(in.Prompt) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写提示词"})
 		return
 	}
-	if in.Duration <= 0 {
-		in.Duration = 5
-	} else if in.Duration < 2 {
-		in.Duration = 2
-	}
-	if in.Duration > 15 {
-		in.Duration = 15
-	}
-	if in.ShortEdge <= 0 {
-		in.ShortEdge = 480
-	}
-	if in.ShortEdge < 256 {
-		in.ShortEdge = 256
-	}
-	if in.ShortEdge > 1080 {
-		in.ShortEdge = 1080
-	}
-	if in.AspectRatio == "" {
-		in.AspectRatio = "16:9"
-	}
-	if in.Steps == 0 {
-		in.Steps = 50
-	}
-	if in.FlowShift == 0 {
-		in.FlowShift = 12
+	if models.IsImageEngine(engine) {
+		in.Duration = 0
+		in.EnhancePrompt = false
+		if in.Quality == "" {
+			in.Quality = "turbo"
+		}
+		if in.ShortEdge <= 0 {
+			in.ShortEdge = 1024
+		}
+		if in.ShortEdge < 512 {
+			in.ShortEdge = 512
+		}
+		if in.ShortEdge > 1536 {
+			in.ShortEdge = 1536
+		}
+		if in.AspectRatio == "" || in.AspectRatio == "auto" {
+			in.AspectRatio = "1:1"
+		}
+		if in.Steps == 0 {
+			if strings.EqualFold(in.Quality, "base") {
+				in.Steps = 50
+			} else {
+				in.Steps = 4
+			}
+		}
+		if in.FlowShift == 0 {
+			if strings.EqualFold(in.Quality, "base") {
+				in.FlowShift = 5
+			} else {
+				in.FlowShift = 1
+			}
+		}
+	} else {
+		if in.Duration <= 0 {
+			in.Duration = 5
+		} else if in.Duration < 2 {
+			in.Duration = 2
+		}
+		if in.Duration > 15 {
+			in.Duration = 15
+		}
+		if in.ShortEdge <= 0 {
+			in.ShortEdge = 480
+		}
+		if models.IsFastH3(engine) {
+			if in.ShortEdge >= 640 {
+				in.ShortEdge = 768
+			} else {
+				in.ShortEdge = 480
+			}
+			in.Steps = 5
+		}
+		if in.ShortEdge < 256 {
+			in.ShortEdge = 256
+		}
+		if in.ShortEdge > 1080 {
+			in.ShortEdge = 1080
+		}
+		if in.AspectRatio == "" {
+			in.AspectRatio = "16:9"
+		}
+		if models.IsFastH3(engine) && in.AspectRatio == "auto" {
+			in.AspectRatio = "16:9"
+		}
+		if in.Steps == 0 {
+			in.Steps = 50
+		}
+		if in.FlowShift == 0 {
+			in.FlowShift = 12
+		}
 	}
 	if in.AudioFlowShift == 0 {
 		in.AudioFlowShift = 3
@@ -297,6 +366,7 @@ func (s *Server) createJob(c *gin.Context) {
 		ID:             uuid.NewString(),
 		Title:          title,
 		Mode:           mode,
+		Engine:         engine,
 		Status:         models.StatusQueued,
 		Priority:       in.Priority,
 		Prompt:         in.Prompt,
@@ -371,6 +441,10 @@ func (s *Server) buildAssets(jobID, mode string, conds []models.AssetCondition) 
 		if countRole(assets, "keyframe") < 2 {
 			return nil, fmt.Errorf("首尾帧模式需要两张关键帧")
 		}
+	case models.ModeI2I:
+		if countRole(assets, "reference") == 0 {
+			return nil, fmt.Errorf("指令编辑需要一张参考图")
+		}
 	}
 	return assets, nil
 }
@@ -419,14 +493,28 @@ func (s *Server) cancelJob(c *gin.Context) {
 	}
 	if job.RemoteID != "" {
 		snap := settings.Snapshot(s.db, s.cfg)
-		endpoint := snap.SGLANGFL2VAURL
-		if job.Mode == models.ModeRef2VA {
-			endpoint = snap.SGLANGRef2VAURL
-		}
-		if err := s.sg.Cancel(endpoint, job.RemoteID); err != nil {
-			s.queue.Log(id, "warn", "通知推理节点中止失败: "+err.Error())
+		if models.IsImageEngine(job.Engine) {
+			if err := s.ll.Cancel(snap.LLaDAImageURL, job.RemoteID); err != nil {
+				s.queue.Log(id, "warn", "通知 LLaDA-Image 中止失败: "+err.Error())
+			} else {
+				s.queue.Log(id, "info", "已通知 LLaDA-Image 中止")
+			}
+		} else if models.IsFastH3(job.Engine) {
+			if err := s.sg.Cancel(snap.FastH3URL, job.RemoteID); err != nil {
+				s.queue.Log(id, "warn", "通知 FastH3 中止失败: "+err.Error())
+			} else {
+				s.queue.Log(id, "info", "已通知 FastH3 中止")
+			}
 		} else {
-			s.queue.Log(id, "info", "已通知推理节点中止")
+			endpoint := snap.SGLANGFL2VAURL
+			if job.Mode == models.ModeRef2VA {
+				endpoint = snap.SGLANGRef2VAURL
+			}
+			if err := s.sg.Cancel(endpoint, job.RemoteID); err != nil {
+				s.queue.Log(id, "warn", "通知推理节点中止失败: "+err.Error())
+			} else {
+				s.queue.Log(id, "info", "已通知推理节点中止")
+			}
 		}
 	}
 	if err := s.queue.Cancel(id); err != nil {
@@ -459,22 +547,38 @@ func (s *Server) deleteJob(c *gin.Context) {
 	s.db.Where("job_id = ?", id).Delete(&models.JobEvent{})
 	s.db.Where("job_id = ?", id).Delete(&models.JobAsset{})
 	s.db.Delete(&models.Job{}, "id = ?", id)
-	_ = os.Remove(s.store.OutputPath(id))
+	s.store.RemoveOutputs(id)
 	_ = os.RemoveAll(s.store.JobMediaDir(id))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 func (s *Server) jobVideo(c *gin.Context) {
+	s.serveOutput(c, false)
+}
+
+func (s *Server) jobImage(c *gin.Context) {
+	s.serveOutput(c, true)
+}
+
+func (s *Server) serveOutput(c *gin.Context, image bool) {
 	var job models.Job
 	if err := s.db.First(&job, "id = ?", c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	if job.OutputPath == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "尚无成片"})
+	path := job.OutputPath
+	if path == "" {
+		if image {
+			path = s.store.ImageOutputPath(job.ID)
+		} else {
+			path = s.store.OutputPath(job.ID)
+		}
+	}
+	if _, err := os.Stat(path); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "尚无成品"})
 		return
 	}
-	c.File(job.OutputPath)
+	c.File(path)
 }
 
 func (s *Server) jobEvents(c *gin.Context) {
@@ -485,10 +589,23 @@ func (s *Server) jobEvents(c *gin.Context) {
 
 func validMode(m string) bool {
 	switch m {
-	case models.ModeT2VA, models.ModeI2VA, models.ModeL2VA, models.ModeFL2VA, models.ModeRef2VA:
+	case models.ModeT2VA, models.ModeI2VA, models.ModeL2VA, models.ModeFL2VA, models.ModeRef2VA, models.ModeT2I, models.ModeI2I:
 		return true
 	}
 	return false
+}
+
+func normalizeEngine(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", models.EngineH3, "local", "h3-base", "h3_base":
+		return models.EngineH3
+	case models.EngineFastH3, models.EngineH3Max, "fast-h3", "fast_h3", "h3max", "h3_max":
+		return models.EngineFastH3
+	case models.EngineLLadaImage, "llada", "llada_image", "lladaimage":
+		return models.EngineLLadaImage
+	default:
+		return ""
+	}
 }
 
 func countRole(assets []models.JobAsset, role string) int {

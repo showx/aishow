@@ -1,5 +1,6 @@
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
-export type JobMode = 't2va' | 'i2va' | 'l2va' | 'fl2va' | 'ref2va'
+export type JobMode = 't2va' | 'i2va' | 'l2va' | 'fl2va' | 'ref2va' | 't2i' | 'i2i'
+export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'llada-image'
 
 export interface JobAsset {
   id: string
@@ -25,6 +26,7 @@ export interface Job {
   id: string
   title: string
   mode: JobMode
+  engine?: JobEngine
   status: JobStatus
   priority: number
   prompt: string
@@ -45,6 +47,7 @@ export interface Job {
   remote_id: string
   output_size: number
   has_video: boolean
+  has_image: boolean
   queue_position: number
   created_at: string
   updated_at: string
@@ -119,6 +122,8 @@ export interface SettingsPayload {
   minimax_api_base: string
   minimax_api_token: string
   has_minimax_token: boolean
+  fasth3_url: string
+  llada_image_url: string
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -169,6 +174,25 @@ export const modeLabel: Record<JobMode, string> = {
   l2va: '尾帧倒叙',
   fl2va: '首尾桥接',
   ref2va: '参考生成',
+  t2i: '文生图',
+  i2i: '指令编辑',
+}
+
+export const engineLabel: Record<JobEngine, string> = {
+  h3: 'H3-Base',
+  fasth3: 'FastH3',
+  'h3-max': 'FastH3',
+  'llada-image': 'LLaDA-Image',
+}
+
+export function engineName(engine?: string) {
+  if (engine === 'fasth3' || engine === 'h3-max') return engineLabel.fasth3
+  if (engine === 'llada-image') return engineLabel['llada-image']
+  return engineLabel.h3
+}
+
+export function isImageJob(job: { engine?: string; mode?: string }) {
+  return job.engine === 'llada-image' || job.mode === 't2i' || job.mode === 'i2i'
 }
 
 export const statusLabel: Record<JobStatus, string> = {
@@ -186,7 +210,10 @@ export const resolutionPresets = [
 ] as const
 
 export function resolutionLabel(shortEdge: number): string {
-  if (shortEdge >= 1008) return '1080p'
+  if (shortEdge >= 1280) return `${shortEdge}`
+  if (shortEdge >= 1080) return '1080p'
+  if (shortEdge >= 1024) return '1024'
+  if (shortEdge >= 768) return '768p'
   if (shortEdge >= 704) return '720p'
   return '480p'
 }

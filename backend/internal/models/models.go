@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	StatusQueued    = "queued"
@@ -14,12 +17,20 @@ const (
 	ModeL2VA   = "l2va"
 	ModeFL2VA  = "fl2va"
 	ModeRef2VA = "ref2va"
+	ModeT2I    = "t2i"
+	ModeI2I    = "i2i"
+
+	EngineH3         = "h3"
+	EngineFastH3     = "fasth3"
+	EngineH3Max      = "h3-max"
+	EngineLLadaImage = "llada-image"
 )
 
 type Job struct {
 	ID              string     `gorm:"primaryKey;size:36" json:"id"`
 	Title           string     `gorm:"size:200" json:"title"`
 	Mode            string     `gorm:"size:32;index" json:"mode"`
+	Engine          string     `gorm:"size:32;index" json:"engine"`
 	Status          string     `gorm:"size:32;index" json:"status"`
 	Priority        int        `gorm:"index" json:"priority"`
 	Prompt          string     `gorm:"type:text" json:"prompt"`
@@ -41,6 +52,7 @@ type Job struct {
 	OutputPath      string     `gorm:"size:500" json:"-"`
 	OutputSize      int64      `json:"output_size"`
 	HasVideo        bool       `json:"has_video"`
+	HasImage        bool       `json:"has_image"`
 	QueuePosition   int        `gorm:"-" json:"queue_position"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
@@ -88,6 +100,7 @@ type JobEvent struct {
 type CreateJobRequest struct {
 	Title          string            `json:"title"`
 	Mode           string            `json:"mode" binding:"required"`
+	Engine         string            `json:"engine"`
 	Prompt         string            `json:"prompt" binding:"required"`
 	Duration       float64           `json:"duration"`
 	AspectRatio    string            `json:"aspect_ratio"`
@@ -122,6 +135,8 @@ type SettingsPayload struct {
 	MiniMaxAPIBase    string `json:"minimax_api_base"`
 	MiniMaxAPIToken   string `json:"minimax_api_token"`
 	HasMiniMaxToken   bool   `json:"has_minimax_token"`
+	FastH3URL         string `json:"fasth3_url"`
+	LLaDAImageURL     string `json:"llada_image_url"`
 }
 
 type SystemStatus struct {
@@ -167,4 +182,35 @@ type EndpointHealth struct {
 	Healthy   bool   `json:"healthy"`
 	LatencyMS int64  `json:"latency_ms"`
 	Detail    string `json:"detail"`
+}
+
+func IsFastH3(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineFastH3, EngineH3Max, "fast-h3", "fast_h3", "h3max", "h3_max":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsImageEngine(engine string) bool {
+	switch engine {
+	case EngineLLadaImage, "llada", "llada_image":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsImageMode(mode string) bool {
+	return mode == ModeT2I || mode == ModeI2I
+}
+
+func IsVideoMode(mode string) bool {
+	switch mode {
+	case ModeT2VA, ModeI2VA, ModeL2VA, ModeFL2VA, ModeRef2VA:
+		return true
+	default:
+		return false
+	}
 }

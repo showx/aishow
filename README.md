@@ -5,8 +5,10 @@
 ## 能力
 
 - 文生影像 `t2va`、首帧 / 尾帧 / 首尾帧 `fl2va`、参考生成 `ref2va`
+- 开源文生图 / 指令编辑：`LLaDA-Image`（`t2i` / `i2i`）
 - SQLite 持久化队列：排队、插队、取消、重试、实时进度
 - 对接 SGLang 异步接口 `POST /v1/videos` → 轮询 → 下载 MP4
+- 对接本机 LLaDA-Image 边车 `POST /v1/images` → 轮询 → 下载 PNG
 - 可选调用官方 H3-Context-IR 做提示增强
 - `mock` 模式：没有 GPU 也能把队列和工坊跑通
 
@@ -31,6 +33,43 @@ D:\code\aishow\scripts\start_h3_nf4.bat
 ```
 
 它会在 `http://127.0.0.1:30010` 提供和 SGLang 一样的 `/v1/videos`。Aishow 工坊把模式设成 `auto` 即可把任务打到这份 NF4 上。
+
+## 本机 LLaDA-Image（开源生图）
+
+[LLaDA-Image](https://github.com/inclusionAI/LLaDA-Image) 是 inclusionAI 的 6B 开源文生图 / 指令编辑模型。控制面不加载权重，由 Python 边车跑 Diffusers pipeline。
+
+本机已装到 `F:\LLaDA-Image`（源码 + `pydeps`），权重在 `F:\models\LLaDA-Image-Turbo`。复用 ComfyUI 的 CUDA PyTorch，不另装一份。
+
+```bat
+D:\code\aishow\scripts\start_llada_image.bat
+```
+
+默认 Turbo（4 步）。要高品质 Base：
+
+```bat
+set LLADA_MODEL=F:\models\LLaDA-Image
+D:\code\aishow\scripts\start_llada_image.bat
+```
+
+边车监听 `http://127.0.0.1:30020`。工坊选「LLaDA-Image」，推理模式设成 `auto`。
+
+## 本机 FastH3（FastVideo 4-step）
+
+[FastVideo-Minimax-FastH3-Preview-v0.2](https://huggingface.co/FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2) 是 MiniMax-H3 的 4 步 DMD2 蒸馏，走 FastVideo，不是官方云端 `MiniMax-H3-Max`。当前 Preview 只蒸馏了文生（`t2va`）。
+
+```bat
+git clone https://github.com/hao-ai-lab/FastVideo.git E:\FastVideo
+cd /d E:\FastVideo
+UV_TORCH_BACKEND=cu126 uv pip install -e ".[fasth3]"
+hf download FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2 --local-dir E:\MiniMax-H3\models\FastVideo-Minimax-FastH3-Preview-v0.2
+
+set FASTVIDEO_ROOT=E:\FastVideo
+D:\code\aishow\scripts\start_fasth3.bat
+```
+
+边车监听 `http://127.0.0.1:8000`（`POST /v1/videos`，模型别名 `fasth3`）。工坊选「FastH3 本地」，推理模式设成 `auto`。
+
+官方 4 卡路径：`fastvideo serve --config D:\code\aishow\scripts\openai_fasth3.yaml`。单卡 24GB 必须开 DiT offload，训练分辨率是 768×1344 / 124 帧（5 秒），采样梯子 `[999, 749, 500, 250]`。
 
 ## 启动
 

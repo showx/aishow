@@ -11,13 +11,14 @@
     <div class="grid">
       <article v-for="job in items" :key="job.id" class="panel card" @click="active = job">
         <div class="frame">
-          <video v-if="job.has_video" :src="`/api/v1/jobs/${job.id}/video`" muted></video>
+          <img v-if="job.has_image" :src="`/api/v1/jobs/${job.id}/image`" alt="" />
+          <video v-else-if="job.has_video" :src="`/api/v1/jobs/${job.id}/video`" muted></video>
           <div v-else class="poster">
-            <span>{{ job.has_video ? '' : '模拟成片' }}</span>
+            <span>模拟成品</span>
           </div>
           <div class="shade">
-            <span class="tag">{{ modeLabel[job.mode] }}</span>
-            <span>{{ job.duration }}s · {{ resolutionLabel(job.short_edge) }} · {{ job.aspect_ratio }}</span>
+            <span class="tag">{{ engineName(job.engine) }} · {{ modeLabel[job.mode] }}</span>
+            <span>{{ jobMeta(job) }}</span>
           </div>
         </div>
         <div class="body">
@@ -29,13 +30,15 @@
 
     <div v-if="active" class="lightbox" @click.self="active = null">
       <div class="panel player">
-        <video v-if="active.has_video" :src="`/api/v1/jobs/${active.id}/video`" controls autoplay></video>
-        <div v-else class="poster big">该任务在模拟模式下完成，没有真实 MP4。</div>
+        <img v-if="active.has_image" class="preview" :src="`/api/v1/jobs/${active.id}/image`" alt="" />
+        <video v-else-if="active.has_video" :src="`/api/v1/jobs/${active.id}/video`" controls autoplay></video>
+        <div v-else class="poster big">该任务在模拟模式下完成，没有真实成品。</div>
         <div class="info">
           <h2>{{ active.title }}</h2>
           <p>{{ active.enhanced_prompt || active.prompt }}</p>
-          <div class="meta">{{ active.duration }}s · {{ resolutionLabel(active.short_edge) }} · {{ active.aspect_ratio }} · seed {{ active.seed }} · {{ active.steps }} steps · {{ active.quality }}</div>
-          <a v-if="active.has_video" class="btn btn-primary" :href="`/api/v1/jobs/${active.id}/video`" download>下载成片</a>
+          <div class="meta">{{ engineName(active.engine) }} · {{ jobMeta(active) }} · seed {{ active.seed }} · {{ active.steps }} steps · {{ active.quality }}</div>
+          <a v-if="active.has_image" class="btn btn-primary" :href="`/api/v1/jobs/${active.id}/image`" download>下载图片</a>
+          <a v-else-if="active.has_video" class="btn btn-primary" :href="`/api/v1/jobs/${active.id}/video`" download>下载成片</a>
         </div>
       </div>
     </div>
@@ -45,13 +48,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useAppStore } from '../stores/app'
-import { modeLabel, resolutionLabel, type Job, type JobMode } from '../api/http'
+import { engineName, isImageJob, modeLabel, resolutionLabel, type Job, type JobMode } from '../api/http'
 
 const store = useAppStore()
 const filter = ref('')
 const active = ref<Job | null>(null)
-const modes: JobMode[] = ['t2va', 'i2va', 'l2va', 'fl2va', 'ref2va']
+const modes: JobMode[] = ['t2va', 'i2va', 'l2va', 'fl2va', 'ref2va', 't2i', 'i2i']
 const items = computed(() => store.gallery.filter(j => !filter.value || j.mode === filter.value))
+
+function jobMeta(job: Job) {
+  const size = `${resolutionLabel(job.short_edge)} · ${job.aspect_ratio}`
+  if (isImageJob(job)) return size
+  return `${job.duration}s · ${size}`
+}
 </script>
 
 <style scoped>
@@ -59,7 +68,8 @@ const items = computed(() => store.gallery.filter(j => !filter.value || j.mode =
 .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .card { overflow: hidden; cursor: pointer; }
 .frame { position: relative; aspect-ratio: 16/10; background: #0b0d14; }
-.frame video, .poster { width: 100%; height: 100%; object-fit: cover; }
+.frame video, .frame img, .poster { width: 100%; height: 100%; object-fit: cover; }
+.preview { width: 100%; border-radius: 12px; background: #000; display: block; }
 .poster {
   display: grid; place-items: center;
   background:

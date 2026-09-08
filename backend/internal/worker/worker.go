@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"aishow/internal/config"
+	"aishow/internal/llada"
 	"aishow/internal/minimax"
 	"aishow/internal/models"
 	"aishow/internal/queue"
@@ -26,6 +27,7 @@ type Worker struct {
 	store   *storage.Store
 	sglang  *sglang.Client
 	minimax *minimax.Client
+	llada   *llada.Client
 }
 
 func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store) *Worker {
@@ -36,6 +38,7 @@ func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store)
 		store:   store,
 		sglang:  sglang.New(),
 		minimax: minimax.New(),
+		llada:   llada.New(),
 	}
 }
 
@@ -67,12 +70,20 @@ func (w *Worker) resumeActive() {
 				return
 			}
 			snap := settings.Snapshot(w.db, w.cfg)
-			endpoint := snap.SGLANGFL2VAURL
-			if job.Mode == models.ModeRef2VA {
-				endpoint = snap.SGLANGRef2VAURL
-			}
 			w.queue.Log(job.ID, "info", "控制面重启，继续跟踪 "+job.RemoteID)
-			if err := w.waitRemote(&job, endpoint, job.RemoteID); err != nil {
+			var err error
+			if isLLada(job.Engine) {
+				err = w.waitLLada(&job, snap.LLaDAImageURL, job.RemoteID)
+			} else if isFastH3(job.Engine) {
+				err = w.waitRemote(&job, snap.FastH3URL, job.RemoteID)
+			} else {
+				endpoint := snap.SGLANGFL2VAURL
+				if job.Mode == models.ModeRef2VA {
+					endpoint = snap.SGLANGRef2VAURL
+				}
+				err = w.waitRemote(&job, endpoint, job.RemoteID)
+			}
+			if err != nil {
 				var fresh models.Job
 				if w.db.First(&fresh, "id = ?", job.ID).Error == nil && fresh.Status == models.StatusCancelled {
 					return
@@ -113,7 +124,7 @@ func (w *Worker) process(job *models.Job) error {
 	mode := strings.ToLower(snap.InferenceMode)
 
 	prompt := job.Prompt
-	if job.EnhancePrompt {
+	if job.EnhancePrompt && !isLLada(job.Engine) {
 		if err := w.queue.Update(job, map[string]any{"stage": "提示增强", "progress": 12}); err != nil {
 			return err
 		}
@@ -134,6 +145,18 @@ func (w *Worker) process(job *models.Job) error {
 		return err
 	}
 
+	if isLLada(job.Engine) {
+		if mode == "mock" {
+			return w.mock(job)
+		}
+		return w.processLLada(job, snap, prompt, conditions)
+	}
+	if isFastH3(job.Engine) {
+		if mode == "mock" {
+			return w.mock(job)
+		}
+		return w.processFastH3(job, snap, prompt)
+	}
 	if mode == "mock" {
 		return w.mock(job)
 	}
@@ -237,6 +260,195 @@ func (w *Worker) download(job *models.Job, endpoint, remoteID string) error {
 	}
 	w.queue.Log(job.ID, "info", fmt.Sprintf("成片 %.1f MB", float64(n)/1024/1024))
 	return w.queue.Finish(job, models.StatusSucceeded, "已完成", "", dest, n, true)
+}
+
+func (w *Worker) processFastH3(job *models.Job, snap models.SettingsPayload, prompt string) error {
+	if job.Mode != models.ModeT2VA {
+		return fmt.Errorf("本地 FastH3 Preview 只蒸馏了文生（t2va），暂不支持 %s", job.Mode)
+	}
+	endpoint := strings.TrimSpace(snap.FastH3URL)
+	if endpoint == "" {
+		return fmt.Errorf("未配置 FastH3 节点地址")
+	}
+	width, height := fastH3Canvas(job.AspectRatio, job.ShortEdge)
+	frames := alignH3Frames(job.Duration)
+	seconds := int(job.Duration + 0.5)
+	if seconds < 1 {
+		seconds = 1
+	}
+	req := sglang.FastH3Request{
+		Model:             "fasth3",
+		Prompt:            prompt,
+		Seconds:           seconds,
+		Size:              fmt.Sprintf("%dx%d", width, height),
+		NumFrames:         frames,
+		Seed:              job.Seed,
+		NumInferenceSteps: 5,
+		GuidanceScale:     1.0,
+	}
+	if err := w.queue.Update(job, map[string]any{"stage": "提交 FastH3", "progress": 22}); err != nil {
+		return err
+	}
+	created, err := w.sglang.CreateJSON(endpoint, req)
+	if err != nil {
+		return fmt.Errorf("提交 FastH3 失败: %w", err)
+	}
+	_ = w.queue.Update(job, map[string]any{"remote_id": created.ID, "stage": "FastH3 4-step 采样", "progress": 28})
+	w.queue.Log(job.ID, "info", fmt.Sprintf("FastH3 任务 %s · %dx%d · %d 帧", created.ID, width, height, frames))
+	return w.waitRemote(job, endpoint, created.ID)
+}
+
+func (w *Worker) processLLada(job *models.Job, snap models.SettingsPayload, prompt string, conditions []sglang.Condition) error {
+	endpoint := snap.LLaDAImageURL
+	if strings.TrimSpace(endpoint) == "" {
+		return fmt.Errorf("未配置 LLaDA-Image 节点地址")
+	}
+	refs := make([]llada.Condition, 0, len(conditions))
+	for _, c := range conditions {
+		refs = append(refs, llada.Condition{Type: c.Type, URI: c.URI, Role: c.Role})
+	}
+	task := job.Mode
+	if task != models.ModeI2I {
+		task = models.ModeT2I
+	}
+	req := llada.ImageRequest{
+		Prompt:            prompt,
+		Task:              task,
+		Conditions:        refs,
+		Quality:           job.Quality,
+		NumInferenceSteps: job.Steps,
+		GuidanceScale:     lladaGuidance(job.Quality, job.FlowShift),
+		Seed:              job.Seed,
+		Target: llada.Target{
+			ShortEdge:   job.ShortEdge,
+			AspectRatio: job.AspectRatio,
+		},
+	}
+	if err := w.queue.Update(job, map[string]any{"stage": "提交 LLaDA-Image", "progress": 22}); err != nil {
+		return err
+	}
+	created, err := w.llada.Create(endpoint, req)
+	if err != nil {
+		return fmt.Errorf("提交 LLaDA-Image 失败: %w", err)
+	}
+	_ = w.queue.Update(job, map[string]any{"remote_id": created.ID, "stage": "扩散采样", "progress": 28})
+	w.queue.Log(job.ID, "info", "LLaDA-Image 任务 "+created.ID)
+	return w.waitLLada(job, endpoint, created.ID)
+}
+
+func (w *Worker) waitLLada(job *models.Job, endpoint, remoteID string) error {
+	deadline := time.Now().Add(45 * time.Minute)
+	for time.Now().Before(deadline) {
+		var fresh models.Job
+		if err := w.db.First(&fresh, "id = ?", job.ID).Error; err == nil && fresh.Status == models.StatusCancelled {
+			_ = w.llada.Cancel(endpoint, remoteID)
+			return fmt.Errorf("任务已取消")
+		}
+		st, err := w.llada.Status(endpoint, remoteID)
+		if err != nil {
+			w.queue.Log(job.ID, "warn", err.Error())
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		status := strings.ToLower(st.Status)
+		progress := mapRemoteProgress(st.Progress)
+		switch status {
+		case "completed", "succeeded", "success":
+			return w.downloadImage(job, endpoint, remoteID)
+		case "cancelled":
+			_ = w.queue.Cancel(job.ID)
+			return fmt.Errorf("任务已取消")
+		case "failed", "error":
+			msg := "LLaDA-Image 推理失败"
+			if st.Error != nil && st.Error.Message != "" {
+				msg = st.Error.Message
+			}
+			return fmt.Errorf("%s", msg)
+		default:
+			elapsed := ""
+			if job.StartedAt != nil {
+				elapsed = " " + time.Since(*job.StartedAt).Truncate(time.Second).String()
+			} else if fresh.StartedAt != nil {
+				elapsed = " " + time.Since(*fresh.StartedAt).Truncate(time.Second).String()
+			}
+			_ = w.queue.Update(job, map[string]any{
+				"stage":    remoteStage(status) + elapsed,
+				"progress": progress,
+			})
+		}
+		time.Sleep(1500 * time.Millisecond)
+	}
+	return fmt.Errorf("等待 LLaDA-Image 超时")
+}
+
+func (w *Worker) downloadImage(job *models.Job, endpoint, remoteID string) error {
+	_ = w.queue.Update(job, map[string]any{"stage": "写出图片", "progress": 92})
+	dest := w.store.ImageOutputPath(job.ID)
+	n, err := w.llada.Download(endpoint, remoteID, dest)
+	if err != nil {
+		return fmt.Errorf("下载图片失败: %w", err)
+	}
+	w.queue.Log(job.ID, "info", fmt.Sprintf("图片 %.1f MB", float64(n)/1024/1024))
+	return w.queue.FinishMedia(job, models.StatusSucceeded, "已完成", "", dest, n, false, true)
+}
+
+func lladaGuidance(quality string, flowShift float64) float64 {
+	if flowShift > 0 {
+		return flowShift
+	}
+	if strings.EqualFold(quality, "base") {
+		return 5
+	}
+	return 1
+}
+
+func isLLada(engine string) bool {
+	return models.IsImageEngine(engine)
+}
+
+func isFastH3(engine string) bool {
+	return models.IsFastH3(engine)
+}
+
+func fastH3Canvas(aspect string, short int) (int, int) {
+	if short >= 640 {
+		short = 768
+	} else {
+		short = 480
+	}
+	short = short / 32 * 32
+	if short < 32 {
+		short = 32
+	}
+	round := func(n int) int { return n / 32 * 32 }
+	switch aspect {
+	case "9:16":
+		return short, round(short * 16 / 9)
+	case "1:1":
+		return short, short
+	case "4:3":
+		return round(short * 4 / 3), short
+	case "3:4":
+		return short, round(short * 4 / 3)
+	case "21:9":
+		return round(short * 21 / 9), short
+	default:
+		return round(short * 16 / 9), short
+	}
+}
+
+func alignH3Frames(seconds float64) int {
+	n := int(seconds*24 + 0.5)
+	if n < 1 {
+		n = 1
+	}
+	for n%17 != 5 {
+		n++
+	}
+	if n > 345 {
+		n = 345
+	}
+	return n
 }
 
 func (w *Worker) mock(job *models.Job) error {

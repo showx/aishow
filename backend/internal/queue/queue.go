@@ -73,6 +73,10 @@ func (s *Service) Log(jobID, level, message string) {
 }
 
 func (s *Service) Finish(job *models.Job, status, stage, errMsg string, outputPath string, outputSize int64, hasVideo bool) error {
+	return s.FinishMedia(job, status, stage, errMsg, outputPath, outputSize, hasVideo, false)
+}
+
+func (s *Service) FinishMedia(job *models.Job, status, stage, errMsg string, outputPath string, outputSize int64, hasVideo, hasImage bool) error {
 	now := time.Now()
 	fields := map[string]any{
 		"status":        status,
@@ -85,6 +89,7 @@ func (s *Service) Finish(job *models.Job, status, stage, errMsg string, outputPa
 		fields["output_path"] = outputPath
 		fields["output_size"] = outputSize
 		fields["has_video"] = hasVideo
+		fields["has_image"] = hasImage
 	}
 	if err := s.Update(job, fields); err != nil {
 		return err
@@ -123,6 +128,7 @@ func (s *Service) Retry(id string) (*models.Job, error) {
 		"started_at":    nil,
 		"finished_at":   nil,
 		"has_video":     false,
+		"has_image":     false,
 	}); err != nil {
 		return nil, err
 	}

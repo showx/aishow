@@ -20,6 +20,8 @@ const (
 	KeyPublicBase        = "public_base_url"
 	KeyMiniMaxBase       = "minimax_api_base"
 	KeyMiniMaxToken      = "minimax_api_token"
+	KeyFastH3            = "fasth3_url"
+	KeyLLaDAImage        = "llada_image_url"
 )
 
 func Seed(db *gorm.DB, cfg config.Config) error {
@@ -33,6 +35,8 @@ func Seed(db *gorm.DB, cfg config.Config) error {
 		KeyPublicBase:        cfg.PublicBaseURL,
 		KeyMiniMaxBase:       cfg.MiniMaxAPIBase,
 		KeyMiniMaxToken:      cfg.MiniMaxAPIToken,
+		KeyFastH3:            cfg.FastH3URL,
+		KeyLLaDAImage:        cfg.LLaDAImageURL,
 	}
 	for k, v := range defaults {
 		row := models.Setting{Key: k, Value: v}
@@ -75,6 +79,8 @@ func Snapshot(db *gorm.DB, cfg config.Config) models.SettingsPayload {
 		MiniMaxAPIBase:    Get(db, KeyMiniMaxBase, cfg.MiniMaxAPIBase),
 		MiniMaxAPIToken:   masked,
 		HasMiniMaxToken:   token != "",
+		FastH3URL:         Get(db, KeyFastH3, cfg.FastH3URL),
+		LLaDAImageURL:     Get(db, KeyLLaDAImage, cfg.LLaDAImageURL),
 	}
 }
 
@@ -88,6 +94,8 @@ func Apply(db *gorm.DB, in models.SettingsPayload) error {
 		KeyWorkerConcurrency: strconv.Itoa(in.WorkerConcurrency),
 		KeyPublicBase:        strings.TrimRight(strings.TrimSpace(in.PublicBaseURL), "/"),
 		KeyMiniMaxBase:       strings.TrimRight(strings.TrimSpace(in.MiniMaxAPIBase), "/"),
+		KeyFastH3:            strings.TrimRight(strings.TrimSpace(in.FastH3URL), "/"),
+		KeyLLaDAImage:        strings.TrimRight(strings.TrimSpace(in.LLaDAImageURL), "/"),
 	}
 	for k, v := range pairs {
 		if v == "" && k != KeyMiniMaxBase {

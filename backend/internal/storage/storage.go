@@ -41,6 +41,15 @@ func (s *Store) OutputPath(jobID string) string {
 	return filepath.Join(s.OutputsDir(), jobID+".mp4")
 }
 
+func (s *Store) ImageOutputPath(jobID string) string {
+	return filepath.Join(s.OutputsDir(), jobID+".png")
+}
+
+func (s *Store) RemoveOutputs(jobID string) {
+	_ = os.Remove(s.OutputPath(jobID))
+	_ = os.Remove(s.ImageOutputPath(jobID))
+}
+
 func (s *Store) JobMediaDir(jobID string) string {
 	return filepath.Join(s.MediaDir(), jobID)
 }

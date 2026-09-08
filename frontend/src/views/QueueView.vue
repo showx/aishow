@@ -14,7 +14,7 @@
             <strong>{{ job.title }}</strong>
             <span class="mono pos">#{{ job.queue_position || '—' }}</span>
           </div>
-          <div class="meta">{{ modeLabel[job.mode] }} · {{ job.duration }}s · {{ resolutionLabel(job.short_edge) }} · P{{ job.priority }}</div>
+          <div class="meta">{{ engineName(job.engine) }} · {{ modeLabel[job.mode] }} · {{ jobLine(job) }} · P{{ job.priority }}</div>
           <p>{{ job.prompt }}</p>
           <div class="ops">
             <button class="btn" @click="act(() => api.bumpJob(job.id))">插队</button>
@@ -63,12 +63,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAppStore } from '../stores/app'
-import { api, modeLabel, resolutionLabel, statusLabel } from '../api/http'
+import { api, engineName, isImageJob, modeLabel, resolutionLabel, statusLabel, type Job } from '../api/http'
 
 const store = useAppStore()
 const now = ref(Date.now())
 let tick = 0
 const done = computed(() => store.jobs.filter(j => ['succeeded', 'failed', 'cancelled'].includes(j.status)).slice(0, 12))
+
+function jobLine(job: Job) {
+  const size = resolutionLabel(job.short_edge)
+  if (isImageJob(job)) return size
+  return `${job.duration}s · ${size}`
+}
 
 function elapsed(started?: string | null) {
   if (!started) return '—'

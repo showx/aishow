@@ -21,6 +21,8 @@ type Config struct {
 	WorkerConcurrency int
 	MiniMaxAPIBase    string
 	MiniMaxAPIToken   string
+	FastH3URL         string
+	LLaDAImageURL     string
 }
 
 func Load() Config {
@@ -39,6 +41,8 @@ func Load() Config {
 		WorkerConcurrency: envInt("AISHOW_WORKER_CONCURRENCY", 1),
 		MiniMaxAPIBase:    strings.TrimRight(env("AISHOW_MINIMAX_API_BASE", "https://api.minimaxi.com"), "/"),
 		MiniMaxAPIToken:   env("AISHOW_MINIMAX_API_TOKEN", ""),
+		FastH3URL:         strings.TrimRight(env("AISHOW_FASTH3_URL", "http://127.0.0.1:8000"), "/"),
+		LLaDAImageURL:     strings.TrimRight(env("AISHOW_LLADA_IMAGE_URL", "http://127.0.0.1:30020"), "/"),
 	}
 	if cfg.WorkerConcurrency < 1 {
 		cfg.WorkerConcurrency = 1
