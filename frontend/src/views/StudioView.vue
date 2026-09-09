@@ -26,7 +26,10 @@
       <div class="media" v-if="needMedia">
         <DropZone v-if="needFirst" v-model="firstFrame" title="首帧" accept="image/*" kind="image" />
         <DropZone v-if="needLast" v-model="lastFrame" title="尾帧" accept="image/*" kind="image" />
-        <DropZone v-if="form.mode === 'ref2va' || form.mode === 'i2i'" v-model="refImage" title="参考图" accept="image/*" kind="image" />
+        <DropZone v-if="form.mode === 'i2i'" v-model="refImage" title="参考图" accept="image/*" kind="image" />
+        <div v-if="form.mode === 'ref2va'" class="refs">
+          <DropZone v-model="refImages" title="参考图" accept="image/*" kind="image" multiple :max="9" />
+        </div>
         <DropZone v-if="form.mode === 'ref2va'" v-model="refVideo" title="参考视频" accept="video/*" kind="video" />
         <DropZone v-if="form.mode === 'ref2va'" v-model="refAudio" title="参考音频" accept="audio/*" kind="audio" />
       </div>
@@ -144,6 +147,7 @@ const deleteError = ref('')
 const firstFrame = ref<File | null>(null)
 const lastFrame = ref<File | null>(null)
 const refImage = ref<File | null>(null)
+const refImages = ref<File[]>([])
 const refVideo = ref<File | null>(null)
 const refAudio = ref<File | null>(null)
 
@@ -276,7 +280,7 @@ const engineHint = computed(() => {
   const offline = online ? '' : '当前节点离线，请改选带「在线」的引擎。'
   if (isLLada.value) return ['LLaDA-Image 是开源 6B 文生图 / 指令编辑模型。先启动本机边车，再把推理模式设成 auto。', offline].filter(Boolean).join(' ')
   if (isFastH3.value) return ['本地 FastH3 GGUF Q4（ComfyUI 4-step + VSA）。只支持文生。先跑 start_fasth3_gguf.bat，推理模式设成 auto。', offline].filter(Boolean).join(' ')
-  if (isRef2VAInt8.value) return ['Comfy-Org pruned INT8 参考生成。先跑 start_h3_ref2va_int8.bat。24GB 不要和 NF4 边车同时开。', offline].filter(Boolean).join(' ')
+  if (isRef2VAInt8.value) return ['Comfy-Org pruned INT8 参考生成，最多 9 张参考图。先跑 start_h3_ref2va_int8.bat。24GB 不要和 NF4 边车同时开。', offline].filter(Boolean).join(' ')
   return ['本地 H3-Base NF4：文生 / 首尾帧走 start_h3_nf4.bat（30010）。参考生成请改选「H3 Ref2VA INT8」。', offline].filter(Boolean).join(' ')
 })
 const resolutionHint = computed(() => {
@@ -431,8 +435,10 @@ async function applyHistory(id: string) {
   firstFrame.value = null
   lastFrame.value = null
   refImage.value = null
+  refImages.value = []
   refVideo.value = null
   refAudio.value = null
+  const images: File[] = []
   for (const asset of job.assets || []) {
     const file = await fileFromUpload(asset.upload_id, asset.filename)
     if (!file) continue
@@ -440,8 +446,10 @@ async function applyHistory(id: string) {
     else if (asset.role === 'keyframe') firstFrame.value = file
     else if (asset.type === 'video') refVideo.value = file
     else if (asset.type === 'audio') refAudio.value = file
-    else refImage.value = file
+    else images.push(file)
   }
+  refImages.value = images.slice(0, 9)
+  refImage.value = images[0] || null
   store.flash('已载入历史参数')
 }
 
@@ -475,7 +483,7 @@ async function submit() {
     store.flash('请上传尾帧')
     return
   }
-  if (form.mode === 'ref2va' && !refImage.value && !refVideo.value && !refAudio.value) {
+  if (form.mode === 'ref2va' && refImages.value.length === 0 && !refVideo.value && !refAudio.value) {
     store.flash('参考生成至少需要一种素材')
     return
   }
@@ -506,11 +514,15 @@ async function submit() {
       const up = await uploadIf(lastFrame.value)
       conditions.push({ upload_id: up?.id, type: 'image', role: 'keyframe', frame_index: -1 })
     }
-    if ((form.mode === 'ref2va' || form.mode === 'i2i') && refImage.value) {
+    if (form.mode === 'i2i' && refImage.value) {
       const up = await uploadIf(refImage.value)
       conditions.push({ upload_id: up?.id, type: 'image', role: 'reference' })
     }
     if (form.mode === 'ref2va') {
+      for (const file of refImages.value.slice(0, 9)) {
+        const up = await uploadIf(file)
+        if (up?.id) conditions.push({ upload_id: up.id, type: 'image', role: 'reference' })
+      }
       if (refVideo.value) {
         const up = await uploadIf(refVideo.value)
         conditions.push({ upload_id: up?.id, type: 'video', role: 'reference', start_seconds: 0 })
@@ -537,6 +549,7 @@ async function submit() {
 .examples { display: flex; gap: 8px; flex-wrap: wrap; }
 .click { cursor: pointer; }
 .media { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.refs { grid-column: 1 / -1; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin: 12px 0; }
 .adv { border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); }
