@@ -71,10 +71,16 @@ func (s *Service) Claim(maxRunning int) (*models.Job, error) {
 }
 
 func (s *Service) Update(job *models.Job, fields map[string]any) error {
-	if err := s.db.Model(job).Updates(fields).Error; err != nil {
-		return err
+	res := s.db.Model(job).Updates(fields)
+	if res.Error != nil {
+		return res.Error
 	}
-	_ = s.db.Preload("Assets").First(job, "id = ?", job.ID).Error
+	if res.RowsAffected == 0 {
+		return nil
+	}
+	if err := s.db.Preload("Assets").First(job, "id = ?", job.ID).Error; err != nil {
+		return nil
+	}
 	s.hub.Broadcast("job.updated", job)
 	return nil
 }

@@ -19,6 +19,7 @@
           <div class="ops">
             <button class="btn" @click="act(() => api.bumpJob(job.id))">插队</button>
             <button class="btn" @click="act(() => api.cancelJob(job.id))">取消</button>
+            <button class="btn btn-danger" @click="askDelete(job)">删除</button>
           </div>
         </article>
         <div v-if="store.queued.length === 0" class="empty">队列空闲</div>
@@ -36,6 +37,7 @@
           <div class="meta">已运行 {{ elapsed(job.started_at) }} · seed {{ job.seed }} · {{ job.steps }} steps</div>
           <div class="ops">
             <button class="btn btn-danger" @click="act(() => api.cancelJob(job.id))">中止</button>
+            <button class="btn" @click="askDelete(job)">删除</button>
           </div>
         </article>
         <div v-if="store.running.length === 0" class="empty">工位空闲</div>
@@ -58,24 +60,57 @@
           >{{ job.error_message }}</p>
           <div class="ops">
             <button v-if="job.status !== 'succeeded'" class="btn" @click="act(() => api.retryJob(job.id))">重试</button>
-            <button class="btn" @click="act(() => api.deleteJob(job.id).then(() => store.refresh()))">删除</button>
+            <button class="btn btn-danger" @click="askDelete(job)">删除</button>
           </div>
         </article>
       </section>
     </div>
+
+    <JobDeleteModal :job="pending" :busy="deleting" :error="deleteError" @close="closeDelete" @confirm="confirmDelete" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import JobDeleteModal from '../components/JobDeleteModal.vue'
 import { useAppStore } from '../stores/app'
 import { api, engineName, isImageJob, modeLabel, resolutionLabel, statusLabel, type Job } from '../api/http'
 
 const store = useAppStore()
 const now = ref(Date.now())
 const expanded = ref(new Set<string>())
+const pending = ref<Job | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 let tick = 0
 const done = computed(() => store.jobs.filter(j => ['succeeded', 'failed', 'cancelled'].includes(j.status)).slice(0, 12))
+
+function askDelete(job: Job) {
+  pending.value = job
+  deleteError.value = ''
+}
+
+function closeDelete() {
+  if (deleting.value) return
+  pending.value = null
+  deleteError.value = ''
+}
+
+async function confirmDelete() {
+  if (!pending.value) return
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await store.deleteJob(pending.value.id)
+    store.flash('已删除')
+    pending.value = null
+    await store.refresh()
+  } catch (e: any) {
+    deleteError.value = e.message || '删除失败'
+  } finally {
+    deleting.value = false
+  }
+}
 
 function toggleErr(id: string) {
   const next = new Set(expanded.value)

@@ -32,6 +32,15 @@ export const useAppStore = defineStore('app', () => {
     else jobs.value.unshift(job)
   }
 
+  function removeJob(id: string) {
+    jobs.value = jobs.value.filter(j => j.id !== id)
+  }
+
+  async function deleteJob(id: string) {
+    await api.deleteJob(id)
+    removeJob(id)
+  }
+
   function connectEvents() {
     const es = new EventSource('/api/v1/events')
     es.onopen = () => { connected.value = true }
@@ -41,6 +50,9 @@ export const useAppStore = defineStore('app', () => {
         const payload = JSON.parse(e.data)
         if (payload.type === 'job.created' || payload.type === 'job.updated') {
           upsertJob(payload.data)
+        }
+        if (payload.type === 'job.deleted' && payload.data?.id) {
+          removeJob(payload.data.id)
         }
         if (payload.type === 'queue.changed') {
           api.system().then(s => { system.value = s })
@@ -64,5 +76,5 @@ export const useAppStore = defineStore('app', () => {
     notice.value = ''
   }
 
-  return { jobs, system, hardware, settings, connected, notice, queued, running, gallery, refresh, refreshMetrics, upsertJob, connectEvents, flash, reset }
+  return { jobs, system, hardware, settings, connected, notice, queued, running, gallery, refresh, refreshMetrics, upsertJob, removeJob, deleteJob, connectEvents, flash, reset }
 })

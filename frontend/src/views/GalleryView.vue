@@ -24,6 +24,9 @@
         <div class="body">
           <h3>{{ job.title }}</h3>
           <p>{{ job.prompt }}</p>
+          <div class="card-ops" @click.stop>
+            <button class="btn btn-danger" type="button" @click="askDelete(job)">删除</button>
+          </div>
         </div>
       </article>
     </div>
@@ -89,16 +92,20 @@
             <button class="btn" type="button" @click="reuse(active)">填回工坊</button>
             <a v-if="active.has_image" class="btn btn-primary" :href="`/api/v1/jobs/${active.id}/image`" download>下载图片</a>
             <a v-else-if="active.has_video" class="btn btn-primary" :href="`/api/v1/jobs/${active.id}/video`" download>下载成片</a>
+            <button class="btn btn-danger" type="button" @click="askDelete(active)">删除</button>
           </div>
         </div>
       </div>
     </div>
+
+    <JobDeleteModal :job="pending" :busy="deleting" :error="deleteError" @close="closeDelete" @confirm="confirmDelete" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import JobDeleteModal from '../components/JobDeleteModal.vue'
 import { useAppStore } from '../stores/app'
 import {
   api,
@@ -116,6 +123,9 @@ const store = useAppStore()
 const router = useRouter()
 const filter = ref('')
 const active = ref<Job | null>(null)
+const pending = ref<Job | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 const modes: JobMode[] = ['t2va', 'i2va', 'l2va', 'fl2va', 'ref2va', 't2i', 'i2i']
 const items = computed(() => store.gallery.filter(j => !filter.value || j.mode === filter.value))
 const showEnhanced = computed(() => {
@@ -226,8 +236,40 @@ function reuse(job: Job) {
   router.push({ name: 'studio', query: { reuse: job.id } })
 }
 
+function askDelete(job: Job) {
+  pending.value = job
+  deleteError.value = ''
+}
+
+function closeDelete() {
+  if (deleting.value) return
+  pending.value = null
+  deleteError.value = ''
+}
+
+async function confirmDelete() {
+  if (!pending.value) return
+  const id = pending.value.id
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await store.deleteJob(id)
+    if (active.value?.id === id) active.value = null
+    store.flash('已删除')
+    pending.value = null
+  } catch (e: any) {
+    deleteError.value = e.message || '删除失败'
+  } finally {
+    deleting.value = false
+  }
+}
+
+watch(() => store.jobs, list => {
+  if (active.value && !list.some(j => j.id === active.value?.id)) active.value = null
+})
+
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') close()
+  if (e.key === 'Escape' && !pending.value) close()
 }
 
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -264,6 +306,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   overflow-wrap: anywhere;
 }
+.card-ops { display: flex; justify-content: flex-end; margin-top: 12px; }
 .empty { padding: 40px; color: var(--muted); text-align: center; }
 .lightbox {
   position: fixed; inset: 0; z-index: 30;

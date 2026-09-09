@@ -84,8 +84,7 @@ func (w *Worker) resumeActive() {
 				err = w.waitRemote(&job, endpoint, job.RemoteID)
 			}
 			if err != nil {
-				var fresh models.Job
-				if w.db.First(&fresh, "id = ?", job.ID).Error == nil && fresh.Status == models.StatusCancelled {
+				if w.jobAborted(job.ID) {
 					return
 				}
 				w.queue.Log(job.ID, "error", err.Error())
@@ -108,8 +107,7 @@ func (w *Worker) loop(id, slots int) {
 		}
 		w.queue.Log(job.ID, "info", fmt.Sprintf("工位 #%d 开始处理", id))
 		if err := w.process(job); err != nil {
-			var fresh models.Job
-			if w.db.First(&fresh, "id = ?", job.ID).Error == nil && fresh.Status == models.StatusCancelled {
+			if w.jobAborted(job.ID) {
 				continue
 			}
 			w.queue.Log(job.ID, "error", err.Error())
@@ -117,6 +115,14 @@ func (w *Worker) loop(id, slots int) {
 			continue
 		}
 	}
+}
+
+func (w *Worker) jobAborted(id string) bool {
+	var fresh models.Job
+	if err := w.db.First(&fresh, "id = ?", id).Error; err != nil {
+		return true
+	}
+	return fresh.Status == models.StatusCancelled
 }
 
 func (w *Worker) process(job *models.Job) error {
@@ -214,8 +220,7 @@ func (w *Worker) process(job *models.Job) error {
 func (w *Worker) waitRemote(job *models.Job, endpoint, remoteID string) error {
 	deadline := time.Now().Add(timeoutFor(job.Duration))
 	for time.Now().Before(deadline) {
-		var fresh models.Job
-		if err := w.db.First(&fresh, "id = ?", job.ID).Error; err == nil && fresh.Status == models.StatusCancelled {
+		if w.jobAborted(job.ID) {
 			return fmt.Errorf("任务已取消")
 		}
 		st, err := w.sglang.Status(endpoint, remoteID)
@@ -242,8 +247,6 @@ func (w *Worker) waitRemote(job *models.Job, endpoint, remoteID string) error {
 			elapsed := ""
 			if job.StartedAt != nil {
 				elapsed = " " + time.Since(*job.StartedAt).Truncate(time.Second).String()
-			} else if fresh.StartedAt != nil {
-				elapsed = " " + time.Since(*fresh.StartedAt).Truncate(time.Second).String()
 			}
 			_ = w.queue.Update(job, map[string]any{
 				"stage":    remoteStage(status) + elapsed,
@@ -343,8 +346,7 @@ func (w *Worker) processLLada(job *models.Job, snap models.SettingsPayload, prom
 func (w *Worker) waitLLada(job *models.Job, endpoint, remoteID string) error {
 	deadline := time.Now().Add(45 * time.Minute)
 	for time.Now().Before(deadline) {
-		var fresh models.Job
-		if err := w.db.First(&fresh, "id = ?", job.ID).Error; err == nil && fresh.Status == models.StatusCancelled {
+		if w.jobAborted(job.ID) {
 			_ = w.llada.Cancel(endpoint, remoteID)
 			return fmt.Errorf("任务已取消")
 		}
@@ -372,8 +374,6 @@ func (w *Worker) waitLLada(job *models.Job, endpoint, remoteID string) error {
 			elapsed := ""
 			if job.StartedAt != nil {
 				elapsed = " " + time.Since(*job.StartedAt).Truncate(time.Second).String()
-			} else if fresh.StartedAt != nil {
-				elapsed = " " + time.Since(*fresh.StartedAt).Truncate(time.Second).String()
 			}
 			_ = w.queue.Update(job, map[string]any{
 				"stage":    remoteStage(status) + elapsed,
@@ -467,8 +467,7 @@ func (w *Worker) mock(job *models.Job) error {
 		{"封装成片", 94, 500 * time.Millisecond},
 	}
 	for _, st := range stages {
-		var fresh models.Job
-		if err := w.db.First(&fresh, "id = ?", job.ID).Error; err == nil && fresh.Status == models.StatusCancelled {
+		if w.jobAborted(job.ID) {
 			return fmt.Errorf("任务已取消")
 		}
 		_ = w.queue.Update(job, map[string]any{"stage": st.name, "progress": st.pct})

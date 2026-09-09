@@ -519,39 +519,45 @@ func (s *Server) getJob(c *gin.Context) {
 	c.JSON(http.StatusOK, job)
 }
 
+func (s *Server) stopRemote(job *models.Job) {
+	if job.RemoteID == "" {
+		return
+	}
+	snap := settings.Snapshot(s.db, s.cfg)
+	if models.IsImageEngine(job.Engine) {
+		if err := s.ll.Cancel(snap.LLaDAImageURL, job.RemoteID); err != nil {
+			s.queue.Log(job.ID, "warn", "通知 LLaDA-Image 中止失败: "+err.Error())
+		} else {
+			s.queue.Log(job.ID, "info", "已通知 LLaDA-Image 中止")
+		}
+		return
+	}
+	if models.IsFastH3(job.Engine) {
+		if err := s.sg.Cancel(snap.FastH3URL, job.RemoteID); err != nil {
+			s.queue.Log(job.ID, "warn", "通知 FastH3 中止失败: "+err.Error())
+		} else {
+			s.queue.Log(job.ID, "info", "已通知 FastH3 中止")
+		}
+		return
+	}
+	endpoint := snap.SGLANGFL2VAURL
+	if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
+		endpoint = snap.SGLANGRef2VAURL
+	}
+	if err := s.sg.Cancel(endpoint, job.RemoteID); err != nil {
+		s.queue.Log(job.ID, "warn", "通知推理节点中止失败: "+err.Error())
+	} else {
+		s.queue.Log(job.ID, "info", "已通知推理节点中止")
+	}
+}
+
 func (s *Server) cancelJob(c *gin.Context) {
 	job, ok := s.ownedJob(c, false)
 	if !ok {
 		return
 	}
-	id := job.ID
-	if job.RemoteID != "" {
-		snap := settings.Snapshot(s.db, s.cfg)
-		if models.IsImageEngine(job.Engine) {
-			if err := s.ll.Cancel(snap.LLaDAImageURL, job.RemoteID); err != nil {
-				s.queue.Log(id, "warn", "通知 LLaDA-Image 中止失败: "+err.Error())
-			} else {
-				s.queue.Log(id, "info", "已通知 LLaDA-Image 中止")
-			}
-		} else if models.IsFastH3(job.Engine) {
-			if err := s.sg.Cancel(snap.FastH3URL, job.RemoteID); err != nil {
-				s.queue.Log(id, "warn", "通知 FastH3 中止失败: "+err.Error())
-			} else {
-				s.queue.Log(id, "info", "已通知 FastH3 中止")
-			}
-		} else {
-			endpoint := snap.SGLANGFL2VAURL
-			if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
-				endpoint = snap.SGLANGRef2VAURL
-			}
-			if err := s.sg.Cancel(endpoint, job.RemoteID); err != nil {
-				s.queue.Log(id, "warn", "通知推理节点中止失败: "+err.Error())
-			} else {
-				s.queue.Log(id, "info", "已通知推理节点中止")
-			}
-		}
-	}
-	if err := s.queue.Cancel(id); err != nil {
+	s.stopRemote(job)
+	if err := s.queue.Cancel(job.ID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
@@ -588,11 +594,25 @@ func (s *Server) deleteJob(c *gin.Context) {
 		return
 	}
 	id := job.ID
-	s.db.Where("job_id = ?", id).Delete(&models.JobEvent{})
-	s.db.Where("job_id = ?", id).Delete(&models.JobAsset{})
-	s.db.Delete(&models.Job{}, "id = ?", id)
+	if job.Status == models.StatusQueued || job.Status == models.StatusRunning {
+		s.stopRemote(job)
+	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("job_id = ?", id).Delete(&models.JobEvent{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("job_id = ?", id).Delete(&models.JobAsset{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&models.Job{}, "id = ?", id).Error
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	s.store.RemoveOutputs(id)
 	_ = os.RemoveAll(s.store.JobMediaDir(id))
+	s.hub.Broadcast("job.deleted", gin.H{"id": id, "user_id": job.UserID})
+	s.hub.Broadcast("queue.changed", nil)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

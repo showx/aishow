@@ -116,15 +116,21 @@
         </div>
         <div class="muted">{{ engineName(job.engine) }} · {{ job.stage }} · {{ jobMeta(job) }}</div>
         <div class="bar"><i :style="{ width: job.progress + '%' }"></i></div>
+        <div class="item-ops">
+          <button class="btn btn-danger" type="button" @click="askDelete(job)">删除</button>
+        </div>
       </div>
     </aside>
   </div>
+
+  <JobDeleteModal :job="pending" :busy="deleting" :error="deleteError" @close="closeDelete" @confirm="confirmDelete" />
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DropZone from '../components/DropZone.vue'
+import JobDeleteModal from '../components/JobDeleteModal.vue'
 import { api, canvasSize, engineName, isImageJob, resolutionLabel, resolutionPresets, statusLabel, type Job, type JobEngine, type JobMode } from '../api/http'
 import { useAppStore } from '../stores/app'
 
@@ -132,6 +138,9 @@ const store = useAppStore()
 const route = useRoute()
 const router = useRouter()
 const busy = ref(false)
+const pending = ref<Job | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 const firstFrame = ref<File | null>(null)
 const lastFrame = ref<File | null>(null)
 const refImage = ref<File | null>(null)
@@ -339,6 +348,32 @@ function setLLadaQuality(q: 'turbo' | 'base') {
   form.flow_shift = q === 'base' ? 5 : 1
 }
 
+function askDelete(job: Job) {
+  pending.value = job
+  deleteError.value = ''
+}
+
+function closeDelete() {
+  if (deleting.value) return
+  pending.value = null
+  deleteError.value = ''
+}
+
+async function confirmDelete() {
+  if (!pending.value) return
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await store.deleteJob(pending.value.id)
+    store.flash('已删除')
+    pending.value = null
+  } catch (err: any) {
+    deleteError.value = err.message || '删除失败'
+  } finally {
+    deleting.value = false
+  }
+}
+
 function jobMeta(job: Job) {
   const size = `${resolutionLabel(job.short_edge)} · ${job.aspect_ratio}`
   if (isImageJob(job)) return size
@@ -522,6 +557,7 @@ async function submit() {
 }
 .item { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .item-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.item-ops { display: flex; justify-content: flex-end; margin-top: 10px; }
 .bar { margin-top: 8px; height: 5px; background: rgba(255,255,255,0.08); border-radius: 99px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--mint); }
 .row-head h2 { font-size: 16px; }

@@ -193,7 +193,7 @@ func eventVisibleTo(payload []byte, userID string) bool {
 	switch ev.Type {
 	case "queue.changed":
 		return true
-	case "job.created", "job.updated":
+	case "job.created", "job.updated", "job.deleted":
 		var job struct {
 			UserID string `json:"user_id"`
 		}
