@@ -3,6 +3,7 @@ package worker
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"aishow/internal/llada"
 	"aishow/internal/minimax"
 	"aishow/internal/models"
+	"aishow/internal/orchestrator"
 	"aishow/internal/queue"
 	"aishow/internal/settings"
 	"aishow/internal/sglang"
@@ -21,16 +23,18 @@ import (
 )
 
 type Worker struct {
-	cfg     config.Config
-	db      *gorm.DB
-	queue   *queue.Service
-	store   *storage.Store
-	sglang  *sglang.Client
-	minimax *minimax.Client
-	llada   *llada.Client
+	cfg        config.Config
+	db         *gorm.DB
+	queue      *queue.Service
+	store      *storage.Store
+	sglang     *sglang.Client
+	minimax    *minimax.Client
+	llada      *llada.Client
+	orch       *orchestrator.Manager
+	lastEngine string
 }
 
-func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store) *Worker {
+func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store, orch *orchestrator.Manager) *Worker {
 	return &Worker{
 		cfg:     cfg,
 		db:      db,
@@ -39,13 +43,25 @@ func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store)
 		sglang:  sglang.New(),
 		minimax: minimax.New(),
 		llada:   llada.New(),
+		orch:    orch,
 	}
 }
 
 func (w *Worker) Start() {
-	n := settings.Snapshot(w.db, w.cfg).WorkerConcurrency
+	snap := settings.Snapshot(w.db, w.cfg)
+	n := snap.WorkerConcurrency
 	if n < 1 {
 		n = 1
+	}
+	if autoSwitchOn(snap) && n > 1 {
+		log.Printf("auto_switch_engine 已开启，单卡互斥，工位并发按 1 运行")
+		n = 1
+	}
+	if w.orch != nil {
+		w.lastEngine = w.orch.ActiveEngine(snap)
+		if w.lastEngine != "" {
+			w.orch.Remember(w.lastEngine)
+		}
 	}
 	w.resumeActive()
 	for i := 0; i < n; i++ {
@@ -60,6 +76,9 @@ func (w *Worker) resumeActive() {
 	}
 	for i := range jobs {
 		job := jobs[i]
+		if w.lastEngine == "" {
+			w.lastEngine = models.CanonicalEngine(job.Engine)
+		}
 		go func() {
 			if job.RemoteID == "" {
 				_ = w.queue.Update(&job, map[string]any{
@@ -96,7 +115,7 @@ func (w *Worker) resumeActive() {
 
 func (w *Worker) loop(id, slots int) {
 	for {
-		job, err := w.queue.Claim(slots)
+		job, err := w.queue.Claim(slots, w.lastEngine)
 		if err != nil {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
 				time.Sleep(1200 * time.Millisecond)
@@ -149,6 +168,12 @@ func (w *Worker) process(job *models.Job) error {
 	conditions, err := w.prepareAssets(job, snap)
 	if err != nil {
 		return err
+	}
+
+	if mode != "mock" {
+		if err := w.ensureEngine(job, snap); err != nil {
+			return err
+		}
 	}
 
 	if isLLada(job.Engine) {
@@ -475,6 +500,33 @@ func (w *Worker) mock(job *models.Job) error {
 		time.Sleep(st.wait)
 	}
 	return w.queue.Finish(job, models.StatusSucceeded, "模拟完成", "", "", 0, false)
+}
+
+func (w *Worker) ensureEngine(job *models.Job, snap models.SettingsPayload) error {
+	if w.orch == nil {
+		return nil
+	}
+	if !autoSwitchOn(snap) {
+		return nil
+	}
+	if err := w.queue.Update(job, map[string]any{"stage": "准备引擎", "progress": 8}); err != nil {
+		return err
+	}
+	err := w.orch.EnsureReady(job.Engine, snap, func() bool {
+		return w.jobAborted(job.ID)
+	}, func(msg string) {
+		w.queue.Log(job.ID, "info", msg)
+		_ = w.queue.Update(job, map[string]any{"stage": msg, "progress": 10})
+	})
+	if err != nil {
+		return fmt.Errorf("切换引擎失败: %w", err)
+	}
+	w.lastEngine = models.CanonicalEngine(job.Engine)
+	return nil
+}
+
+func autoSwitchOn(snap models.SettingsPayload) bool {
+	return snap.AutoSwitchEngine == nil || *snap.AutoSwitchEngine
 }
 
 func (w *Worker) enhance(job *models.Job, snap models.SettingsPayload) (string, error) {

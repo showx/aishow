@@ -71,6 +71,8 @@ JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 INFER_Q: queue.Queue[str] = queue.Queue()
 PIPE = None
+LOAD_T0 = 0.0
+LOAD_ERROR = ""
 VARIANT = "turbo" if "turbo" in MODEL.lower() else "base"
 
 
@@ -145,16 +147,27 @@ def torch_dtype():
 
 
 def load_pipe():
-    global PIPE
+    global PIPE, LOAD_ERROR
     dtype = torch_dtype()
+    local = Path(MODEL)
     print(f"[llada-image] loading {MODEL} dtype={dtype} repo={REPO}", flush=True)
+    if local.exists():
+        size = sum(p.stat().st_size for p in local.rglob("*") if p.is_file())
+        print(f"[llada-image] local weights {size / 1024**3:.1f} GB，首次读盘上 GPU 要几分钟", flush=True)
     kwargs = {"torch_dtype": dtype, "device": "cuda"}
+    if local.exists():
+        kwargs["local_files_only"] = True
     try:
-        PIPE = LLaDAImagePipeline.from_pretrained(MODEL, **kwargs)
-    except TypeError:
-        PIPE = LLaDAImagePipeline.from_pretrained(MODEL, torch_dtype=dtype)
-        PIPE = PIPE.to("cuda")
-    print("[llada-image] ready", flush=True)
+        try:
+            PIPE = LLaDAImagePipeline.from_pretrained(MODEL, **kwargs)
+        except TypeError:
+            PIPE = LLaDAImagePipeline.from_pretrained(MODEL, torch_dtype=dtype, local_files_only=local.exists())
+            PIPE = PIPE.to("cuda")
+        print("[llada-image] ready", flush=True)
+    except Exception as exc:
+        LOAD_ERROR = str(exc)
+        print("[llada-image] load failed:", traceback.format_exc(), flush=True)
+        raise
 
 
 def run_job(job_id: str):
@@ -270,13 +283,17 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/health", "/v1/models"):
             current = next((j for j in JOBS.values() if j.get("status") == "in_progress"), None)
+            elapsed = int(time.time() - LOAD_T0) if LOAD_T0 else 0
             self._json(200, {
                 "ok": True,
                 "model": MODEL,
                 "variant": VARIANT,
                 "ready": PIPE is not None,
+                "loading": PIPE is None and not LOAD_ERROR,
                 "busy": current is not None,
                 "progress": (current or {}).get("progress", 0),
+                "elapsed_sec": elapsed,
+                "error": LOAD_ERROR or None,
             })
             return
         m = re.fullmatch(r"/v1/images/([^/]+)/content", path)
@@ -318,8 +335,15 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json(404, {"error": "not found"})
             return
+        if path == "/shutdown":
+            self._json(200, {"ok": True, "shutting_down": True})
+            threading.Thread(target=lambda: (time.sleep(0.35), os._exit(0)), daemon=True).start()
+            return
         if path != "/v1/images":
             self._json(404, {"error": "not found"})
+            return
+        if PIPE is None:
+            self._json(503, {"error": LOAD_ERROR or "LLaDA-Image 仍在加载权重，请稍后再投"})
             return
         body = json.loads(raw or b"{}")
         task = str(body.get("task") or "t2i").lower()
@@ -335,11 +359,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    global LOAD_T0
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    load_pipe()
+    LOAD_T0 = time.time()
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True, name="llada-http").start()
-    print(f"[llada-image] listening on http://{HOST}:{PORT}", flush=True)
+    print(f"[llada-image] listening on http://{HOST}:{PORT}（先探活，权重仍在加载）", flush=True)
+    load_pipe()
     print("[llada-image] inference runs on the main thread", flush=True)
     while True:
         job_id = INFER_Q.get()

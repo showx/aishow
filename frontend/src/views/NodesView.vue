@@ -3,7 +3,7 @@
     <section class="panel form" v-if="form">
       <div class="intro">
         <h2>对接 MiniMax-H3</h2>
-        <p>本控制面不在本机加载权重，而是调度你已经拉起的 H3-Base NF4、H3 Ref2VA INT8、本地 FastH3 或 LLaDA-Image。FL2VA 负责本地 t2va / 首尾帧，INT8 边车负责参考生成。</p>
+        <p>本控制面不在本机加载权重，而是调度 H3-Base NF4、H3 Ref2VA INT8、本地 FastH3 或 LLaDA-Image。打开「排队时自动切换模型」后，可以混着堆队列：工位会等当前引擎跑完，再停旧模型、启新模型。</p>
       </div>
 
       <div class="grid">
@@ -17,6 +17,18 @@
         <div class="field">
           <label>工位并发</label>
           <input v-model.number="form.worker_concurrency" class="input" type="number" min="1" />
+        </div>
+        <div class="field span">
+          <label class="check">
+            <input v-model="form.auto_switch_engine" type="checkbox" />
+            排队时自动切换模型（离线引擎也能投）
+          </label>
+          <p class="hint">「离线」不是禁用。打开后可以混着堆队列：先跑完当前引擎，再结束旧边车、启动新边车。关掉则只有已在线的引擎能跑。</p>
+        </div>
+        <div class="field">
+          <label>同时最多加载几个模型</label>
+          <input v-model.number="form.max_loaded_engines" class="input" type="number" min="1" max="4" />
+          <p class="hint">默认 1。24GB 单卡请保持 1：新模型起来后，后台会把多出来的边车关掉。</p>
         </div>
         <div class="field">
           <label>FL2VA 地址</label>
@@ -129,7 +141,10 @@ const store = useAppStore()
 const form = ref<SettingsPayload | null>(null)
 
 onMounted(async () => {
-  form.value = await api.settings()
+  const next = await api.settings()
+  if (next.auto_switch_engine === undefined) next.auto_switch_engine = true
+  if (!next.max_loaded_engines || next.max_loaded_engines < 1) next.max_loaded_engines = 1
+  form.value = next
 })
 
 async function save() {
@@ -145,6 +160,8 @@ async function save() {
 .page { display: grid; gap: 18px; }
 .form, .docs { padding: 22px; }
 .intro p, .docs p, .muted { color: var(--muted); line-height: 1.7; margin: 8px 0 16px; }
+.hint { font-size: 12px; color: var(--faint); line-height: 1.5; margin: 6px 0 0; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .span { grid-column: 1 / -1; }
 .actions { display: flex; gap: 12px; align-items: center; margin-top: 18px; }

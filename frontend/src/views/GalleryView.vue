@@ -151,6 +151,17 @@ function when(value?: string | null) {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('zh-CN')
 }
 
+function took(job: Job) {
+  if (!job.started_at || !job.finished_at) return '—'
+  const start = new Date(job.started_at).getTime()
+  const end = new Date(job.finished_at).getTime()
+  if (Number.isNaN(start) || Number.isNaN(end)) return '—'
+  const sec = Math.max(0, Math.floor((end - start) / 1000))
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`
+}
+
 function sizeBytes(n: number) {
   if (!n) return '—'
   if (n < 1024) return `${n} B`
@@ -186,7 +197,9 @@ function paramRows(job: Job) {
     { k: '优先级', v: String(job.priority) },
     { k: '成品体积', v: sizeBytes(job.output_size) },
     { k: '创建时间', v: when(job.created_at) },
+    { k: '开始时间', v: when(job.started_at) },
     { k: '完成时间', v: when(job.finished_at) },
+    { k: '生成耗时', v: took(job) },
     { k: '任务 ID', v: job.id },
   )
   return rows

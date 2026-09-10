@@ -4,7 +4,15 @@
       <span class="pill status-queued">排队 {{ store.queued.length }}</span>
       <span class="pill status-running">推理 {{ store.running.length }}</span>
       <span class="pill status-succeeded">完成 {{ store.gallery.length }}</span>
+      <span v-if="autoSwitch" class="pill switch-on">自动切换模型</span>
     </div>
+    <p class="switch-hint">
+      <template v-if="autoSwitch">
+        离线不是禁用：工坊里标「可排队」的引擎现在就能投。默认同时只加载 1 个模型，多出来的会被后台关掉。
+        <template v-if="activeEngine">当前已加载：{{ engineName(activeEngine) }}。</template>
+      </template>
+      <template v-else>自动切换已关，只有已经在线的引擎会跑；离线任务会失败。</template>
+    </p>
 
     <div class="board">
       <section class="col panel">
@@ -15,6 +23,7 @@
             <span class="mono pos">#{{ job.queue_position || '—' }}</span>
           </div>
           <div class="meta">{{ engineName(job.engine) }} · {{ modeLabel[job.mode] }} · {{ jobLine(job) }} · P{{ job.priority }}</div>
+          <div class="meta">创建 {{ clock(job.created_at) }} · 等待 {{ elapsed(job.created_at) }}</div>
           <p>{{ job.prompt }}</p>
           <div class="ops">
             <button class="btn" @click="act(() => api.bumpJob(job.id))">插队</button>
@@ -34,7 +43,7 @@
           </div>
           <div class="stage">{{ job.stage }}</div>
           <div class="bar"><i :style="{ width: job.progress + '%' }"></i></div>
-          <div class="meta">已运行 {{ elapsed(job.started_at) }} · seed {{ job.seed }} · {{ job.steps }} steps</div>
+          <div class="meta">开始 {{ clock(job.started_at) }} · 已运行 {{ elapsed(job.started_at) }} · seed {{ job.seed }} · {{ job.steps }} steps</div>
           <div class="ops">
             <button class="btn btn-danger" @click="act(() => api.cancelJob(job.id))">中止</button>
             <button class="btn" @click="askDelete(job)">删除</button>
@@ -77,6 +86,12 @@ import { useAppStore } from '../stores/app'
 import { api, engineName, isImageJob, modeLabel, resolutionLabel, statusLabel, type Job } from '../api/http'
 
 const store = useAppStore()
+const autoSwitch = computed(() => {
+  if (store.settings?.auto_switch_engine !== undefined) return store.settings.auto_switch_engine
+  if (store.system?.auto_switch_engine !== undefined) return store.system.auto_switch_engine
+  return true
+})
+const activeEngine = computed(() => store.system?.active_engine || '')
 const now = ref(Date.now())
 const expanded = ref(new Set<string>())
 const pending = ref<Job | null>(null)
@@ -125,34 +140,57 @@ function jobLine(job: Job) {
   return `${job.duration}s · ${size}`
 }
 
+function parseTime(value?: string | null) {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function clock(value?: string | null) {
+  const d = parseTime(value)
+  if (!d) return '—'
+  const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  const today = new Date(now.value)
+  today.setHours(0, 0, 0, 0)
+  const that = new Date(d)
+  that.setHours(0, 0, 0, 0)
+  const dayDiff = Math.round((today.getTime() - that.getTime()) / 86400000)
+  if (dayDiff === 0) return `今天 ${hm}`
+  if (dayDiff === 1) return `昨天 ${hm}`
+  return `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+}
+
 function elapsed(started?: string | null) {
-  if (!started) return '—'
-  const sec = Math.max(0, Math.floor((now.value - new Date(started).getTime()) / 1000))
+  const d = parseTime(started)
+  if (!d) return '—'
+  const sec = Math.max(0, Math.floor((now.value - d.getTime()) / 1000))
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`
+}
+
+function took(job: Job) {
+  const start = parseTime(job.started_at)
+  const end = parseTime(job.finished_at)
+  if (!start || !end) return ''
+  const sec = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000))
   const m = Math.floor(sec / 60)
   const s = sec % 60
   return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`
 }
 
 function jobStamp(job: Job) {
+  const cost = took(job)
+  if (job.started_at) {
+    const parts = [`开始 ${clock(job.started_at)}`]
+    if (job.finished_at) parts.push(`完成 ${clock(job.finished_at)}`)
+    if (cost) parts.push(`耗时 ${cost}`)
+    return parts.join(' · ')
+  }
   const raw = job.finished_at || job.updated_at || job.created_at
-  if (!raw) return '—'
-  const d = new Date(raw)
-  if (Number.isNaN(d.getTime())) return '—'
-  const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
-  const today = new Date(now.value)
-  today.setHours(0, 0, 0, 0)
-  const that = new Date(d)
-  that.setHours(0, 0, 0, 0)
-  const dayDiff = Math.round((today.getTime() - that.getTime()) / 86400000)
-  let abs = `${d.getMonth() + 1}/${d.getDate()} ${hm}`
-  if (dayDiff === 0) abs = `今天 ${hm}`
-  else if (dayDiff === 1) abs = `昨天 ${hm}`
-  const sec = Math.max(0, Math.floor((now.value - d.getTime()) / 1000))
-  let rel = '刚刚'
-  if (sec >= 86400) rel = `${Math.floor(sec / 86400)} 天前`
-  else if (sec >= 3600) rel = `${Math.floor(sec / 3600)} 小时前`
-  else if (sec >= 60) rel = `${Math.floor(sec / 60)} 分钟前`
-  return `${abs} · ${rel}`
+  const d = parseTime(raw)
+  if (!d) return '—'
+  return clock(raw)
 }
 
 onMounted(() => {
@@ -173,6 +211,8 @@ async function act(fn: () => Promise<unknown>) {
 <style scoped>
 .page { display: grid; gap: 16px; min-width: 0; }
 .legend { display: flex; gap: 8px; flex-wrap: wrap; }
+.switch-on { background: rgba(94,234,212,0.14); color: var(--mint); }
+.switch-hint { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 0; }
 .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .col { padding: 18px; min-height: 420px; min-width: 0; overflow: hidden; }
 .col h2 { font-size: 16px; margin-bottom: 14px; }

@@ -15,4 +15,4 @@ cd /d D:\code\aishow
 "%PYTHON%" D:\code\aishow\backend\python\diffsynth_server.py
 echo.
 echo 边车已退出。看到 ready / listening 之前请不要关窗口。
-pause
+if /i not "%AISHOW_HEADLESS%"=="1" pause

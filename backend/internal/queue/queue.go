@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"strings"
 	"time"
 
 	"aishow/internal/hub"
@@ -27,7 +28,7 @@ func (s *Service) Enqueue(job *models.Job) error {
 	return nil
 }
 
-func (s *Service) Claim(maxRunning int) (*models.Job, error) {
+func (s *Service) Claim(maxRunning int, preferEngine string) (*models.Job, error) {
 	if maxRunning < 1 {
 		maxRunning = 1
 	}
@@ -40,9 +41,8 @@ func (s *Service) Claim(maxRunning int) (*models.Job, error) {
 		if running >= int64(maxRunning) {
 			return gorm.ErrRecordNotFound
 		}
-		if err := tx.Where("status = ?", models.StatusQueued).
-			Order("priority desc, created_at asc").
-			First(&job).Error; err != nil {
+		q := tx.Where("status = ?", models.StatusQueued).Order(preferClaimOrder(preferEngine))
+		if err := q.First(&job).Error; err != nil {
 			return err
 		}
 		now := time.Now()
@@ -178,6 +178,25 @@ func (s *Service) Position(job models.Job) int {
 			models.StatusQueued, job.Priority, job.Priority, job.CreatedAt).
 		Count(&n)
 	return int(n) + 1
+}
+
+func preferClaimOrder(preferEngine string) string {
+	aliases := models.EngineAliases(preferEngine)
+	if preferEngine == "" || len(aliases) == 0 {
+		return "priority desc, created_at asc"
+	}
+	quoted := make([]string, 0, len(aliases))
+	for _, a := range aliases {
+		a = strings.ToLower(strings.TrimSpace(a))
+		if a == "" || strings.ContainsAny(a, "'\";") {
+			continue
+		}
+		quoted = append(quoted, "'"+a+"'")
+	}
+	if len(quoted) == 0 {
+		return "priority desc, created_at asc"
+	}
+	return "priority desc, CASE WHEN lower(engine) IN (" + strings.Join(quoted, ",") + ") THEN 0 ELSE 1 END, created_at asc"
 }
 
 func (s *Service) RecoverOrphans() error {

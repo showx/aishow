@@ -12,6 +12,8 @@ import (
 	"aishow/internal/db"
 	"aishow/internal/hub"
 	"aishow/internal/metrics"
+	"aishow/internal/models"
+	"aishow/internal/orchestrator"
 	"aishow/internal/queue"
 	"aishow/internal/settings"
 	"aishow/internal/storage"
@@ -46,10 +48,14 @@ func main() {
 	h := hub.New()
 	q := queue.New(conn, h)
 	hw := metrics.Start()
-	w := worker.New(cfg, conn, q, store)
+	orch := orchestrator.New(cfg)
+	orch.Start(func() models.SettingsPayload {
+		return settings.Snapshot(conn, cfg)
+	})
+	w := worker.New(cfg, conn, q, store, orch)
 	w.Start()
 
-	srv := api.New(cfg, conn, q, store, h, hw)
+	srv := api.New(cfg, conn, q, store, h, hw, orch)
 	addr := cfg.ListenAddr()
 	log.Printf("aishow control plane listening on %s", addr)
 	if err := http.ListenAndServe(addr, srv.Router()); err != nil {

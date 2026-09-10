@@ -45,8 +45,8 @@
           <div v-for="ep in store.system?.endpoints || []" :key="ep.name" class="node">
             <div class="node-top">
               <strong>{{ ep.name }}</strong>
-              <span class="pill" :class="ep.healthy ? 'status-succeeded' : 'status-failed'">
-                <span class="dot"></span>{{ ep.healthy ? '在线' : '离线' }}
+              <span class="pill" :class="ep.healthy ? 'status-succeeded' : 'status-queued'">
+                <span class="dot"></span>{{ ep.healthy ? '在线' : '可排队' }}
               </span>
             </div>
             <div class="mono url">{{ ep.url }}</div>
@@ -54,7 +54,7 @@
           </div>
         </div>
         <p class="note">
-          FL2VA 承接本地文生 / 首尾帧；H3 Ref2VA INT8 承接参考素材；FastH3 走本机 FastVideo 4-step；LLaDA-Image 承接开源文生图。
+          「在线」表示权重已加载。后台默认同时只加载 1 个模型，多出来的边车会被关掉；「可排队」不是禁用，工坊仍可投递。FL2VA 文生 / 首尾帧；INT8 参考生成；FastH3 文生 4-step；LLaDA-Image 文生图。
         </p>
       </article>
 
@@ -68,7 +68,7 @@
           <div v-for="job in live" :key="job.id" class="live">
             <div class="live-main">
               <div class="title">{{ job.title }}</div>
-              <div class="muted">{{ modeLabel[job.mode] }} · {{ job.stage }}</div>
+              <div class="muted">{{ modeLabel[job.mode] }} · {{ job.stage }}<template v-if="job.started_at"> · 开始 {{ new Date(job.started_at).toLocaleTimeString('zh-CN', { hour12: false }) }}</template></div>
             </div>
             <div class="bar"><i :style="{ width: job.progress + '%' }"></i></div>
             <div class="pct display">{{ job.progress }}%</div>
@@ -91,7 +91,7 @@
             <span class="tag">{{ modeLabel[job.mode] }}</span>
           </div>
           <div class="clip-name">{{ job.title }}</div>
-          <div class="muted">{{ new Date(job.created_at).toLocaleString() }}</div>
+          <div class="muted">{{ recentStamp(job) }}</div>
         </router-link>
       </div>
     </section>
@@ -101,7 +101,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '../stores/app'
-import { modeLabel } from '../api/http'
+import { modeLabel, type Job } from '../api/http'
 
 const store = useAppStore()
 const cards = computed(() => [
@@ -122,6 +122,22 @@ const gpuMemPct = computed(() => {
   if (!total) return 0
   return Math.round((store.hardware?.gpu_mem_used_mb || 0) / total * 100)
 })
+
+function recentStamp(job: Job) {
+  if (job.started_at && job.finished_at) {
+    const start = new Date(job.started_at).getTime()
+    const end = new Date(job.finished_at).getTime()
+    if (!Number.isNaN(start) && !Number.isNaN(end)) {
+      const sec = Math.max(0, Math.floor((end - start) / 1000))
+      const m = Math.floor(sec / 60)
+      const s = sec % 60
+      const cost = m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`
+      return `开始 ${new Date(job.started_at).toLocaleTimeString('zh-CN', { hour12: false })} · 耗时 ${cost}`
+    }
+  }
+  const raw = job.finished_at || job.created_at
+  return raw ? new Date(raw).toLocaleString('zh-CN') : '—'
+}
 </script>
 
 <style scoped>

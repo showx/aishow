@@ -22,6 +22,8 @@ const (
 	KeyMiniMaxToken      = "minimax_api_token"
 	KeyFastH3            = "fasth3_url"
 	KeyLLaDAImage        = "llada_image_url"
+	KeyAutoSwitchEngine  = "auto_switch_engine"
+	KeyMaxLoadedEngines  = "max_loaded_engines"
 	KeyAllowRegister     = "allow_register"
 )
 
@@ -38,6 +40,8 @@ func Seed(db *gorm.DB, cfg config.Config) error {
 		KeyMiniMaxToken:      cfg.MiniMaxAPIToken,
 		KeyFastH3:            cfg.FastH3URL,
 		KeyLLaDAImage:        cfg.LLaDAImageURL,
+		KeyAutoSwitchEngine:  boolString(cfg.AutoSwitchEngine),
+		KeyMaxLoadedEngines:  strconv.Itoa(max1(cfg.MaxLoadedEngines)),
 		KeyAllowRegister:     boolString(cfg.AllowRegister),
 	}
 	for k, v := range defaults {
@@ -83,6 +87,8 @@ func Snapshot(db *gorm.DB, cfg config.Config) models.SettingsPayload {
 		HasMiniMaxToken:   token != "",
 		FastH3URL:         Get(db, KeyFastH3, cfg.FastH3URL),
 		LLaDAImageURL:     Get(db, KeyLLaDAImage, cfg.LLaDAImageURL),
+		AutoSwitchEngine:  boolPtr(parseBool(Get(db, KeyAutoSwitchEngine, boolString(cfg.AutoSwitchEngine)), cfg.AutoSwitchEngine)),
+		MaxLoadedEngines:  intPtr(max1(atoi(Get(db, KeyMaxLoadedEngines, strconv.Itoa(max1(cfg.MaxLoadedEngines)))))),
 	}
 }
 
@@ -104,6 +110,16 @@ func Apply(db *gorm.DB, in models.SettingsPayload) error {
 			continue
 		}
 		if err := Put(db, k, v); err != nil {
+			return err
+		}
+	}
+	if in.MaxLoadedEngines != nil {
+		if err := Put(db, KeyMaxLoadedEngines, strconv.Itoa(max1(*in.MaxLoadedEngines))); err != nil {
+			return err
+		}
+	}
+	if in.AutoSwitchEngine != nil {
+		if err := Put(db, KeyAutoSwitchEngine, boolString(*in.AutoSwitchEngine)); err != nil {
 			return err
 		}
 	}
@@ -132,6 +148,28 @@ func boolString(v bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func intPtr(v int) *int { return &v }
+
+func max1(n int) int {
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+func parseBool(s string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func atoi(s string) int {

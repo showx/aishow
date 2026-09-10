@@ -166,6 +166,8 @@ type SettingsPayload struct {
 	HasMiniMaxToken   bool   `json:"has_minimax_token"`
 	FastH3URL         string `json:"fasth3_url"`
 	LLaDAImageURL     string `json:"llada_image_url"`
+	AutoSwitchEngine  *bool  `json:"auto_switch_engine,omitempty"`
+	MaxLoadedEngines  *int   `json:"max_loaded_engines,omitempty"`
 }
 
 type SystemStatus struct {
@@ -178,9 +180,12 @@ type SystemStatus struct {
 	FailedToday    int64            `json:"failed_today"`
 	TotalJobs      int64            `json:"total_jobs"`
 	WorkerSlots    int              `json:"worker_slots"`
-	Endpoints      []EndpointHealth `json:"endpoints"`
-	Hardware       Hardware         `json:"hardware"`
-	Time           time.Time        `json:"time"`
+	Endpoints         []EndpointHealth `json:"endpoints"`
+	Hardware          Hardware         `json:"hardware"`
+	Time              time.Time        `json:"time"`
+	AutoSwitchEngine  bool             `json:"auto_switch_engine"`
+	ActiveEngine      string           `json:"active_engine"`
+	MaxLoadedEngines  int              `json:"max_loaded_engines"`
 }
 
 type Hardware struct {
@@ -211,6 +216,45 @@ type EndpointHealth struct {
 	Healthy   bool   `json:"healthy"`
 	LatencyMS int64  `json:"latency_ms"`
 	Detail    string `json:"detail"`
+}
+
+func CanonicalEngine(engine string) string {
+	switch {
+	case IsFastH3(engine):
+		return EngineFastH3
+	case IsH3Ref2VAInt8(engine):
+		return EngineH3Ref2VAInt8
+	case IsImageEngine(engine):
+		return EngineLLadaImage
+	default:
+		return EngineH3
+	}
+}
+
+func EngineAliases(engine string) []string {
+	switch CanonicalEngine(engine) {
+	case EngineFastH3:
+		return []string{EngineFastH3, EngineH3Max, "fast-h3", "fast_h3", "h3max", "h3_max"}
+	case EngineH3Ref2VAInt8:
+		return []string{EngineH3Ref2VAInt8, "h3-ref2va", "ref2va-int8", "h3_ref2va_int8"}
+	case EngineLLadaImage:
+		return []string{EngineLLadaImage, "llada", "llada_image"}
+	default:
+		return []string{EngineH3, "h3-base", "h3_base", "nf4"}
+	}
+}
+
+func EngineLabel(engine string) string {
+	switch CanonicalEngine(engine) {
+	case EngineFastH3:
+		return "FastH3"
+	case EngineH3Ref2VAInt8:
+		return "H3 Ref2VA INT8"
+	case EngineLLadaImage:
+		return "LLaDA-Image"
+	default:
+		return "H3-Base"
+	}
 }
 
 func IsFastH3(engine string) bool {

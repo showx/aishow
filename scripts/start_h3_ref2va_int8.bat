@@ -29,12 +29,12 @@ if not exist "%TRITON_CACHE_DIR%" mkdir "%TRITON_CACHE_DIR%"
 
 if not exist "%COMFY_PY%" (
   echo 找不到 ComfyUI Python: %COMFY_PY%
-  pause
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )
 if not exist "F:\models\fasth3-gguf\diffusion_models\minimax_h3_ref2va_pruned_int8_convrot.safetensors" (
   echo 找不到 Ref2VA INT8。请先跑 scripts\download_h3_ref2va.ps1
-  pause
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )
 
@@ -52,7 +52,7 @@ if not errorlevel 1 goto comfy_ok
 set /a _n+=1
 if !_n! GEQ 90 (
   echo ComfyUI 90 秒还没起来，请看「H3 Ref2VA ComfyUI」窗口。
-  pause
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )
 goto wait_comfy
@@ -66,4 +66,4 @@ cd /d D:\code\aishow
 "%COMFY_PY%" D:\code\aishow\backend\python\ref2va_int8_server.py
 echo.
 echo Ref2VA INT8 边车已退出。
-pause
+if /i not "%AISHOW_HEADLESS%"=="1" pause

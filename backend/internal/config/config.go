@@ -26,6 +26,10 @@ type Config struct {
 	MiniMaxAPIToken   string
 	FastH3URL         string
 	LLaDAImageURL     string
+	AutoSwitchEngine  bool
+	MaxLoadedEngines  int
+	RepoRoot          string
+	ComfyURL          string
 	AdminUser         string
 	AdminPassword     string
 	AllowRegister     bool
@@ -53,6 +57,10 @@ func Load() Config {
 		MiniMaxAPIToken:   env("AISHOW_MINIMAX_API_TOKEN", ""),
 		FastH3URL:         strings.TrimRight(env("AISHOW_FASTH3_URL", "http://127.0.0.1:8000"), "/"),
 		LLaDAImageURL:     strings.TrimRight(env("AISHOW_LLADA_IMAGE_URL", "http://127.0.0.1:30020"), "/"),
+		AutoSwitchEngine:  envBool("AISHOW_AUTO_SWITCH_ENGINE", true),
+		MaxLoadedEngines:  envInt("AISHOW_MAX_LOADED_ENGINES", 1),
+		RepoRoot:          env("AISHOW_ROOT", ""),
+		ComfyURL:          strings.TrimRight(env("AISHOW_COMFY_URL", "http://127.0.0.1:8188"), "/"),
 		AdminUser:         env("AISHOW_ADMIN_USER", ""),
 		AdminPassword:     env("AISHOW_ADMIN_PASSWORD", ""),
 		AllowRegister:     envBool("AISHOW_ALLOW_REGISTER", true),
@@ -65,6 +73,9 @@ func Load() Config {
 	}
 	if cfg.WorkerConcurrency < 1 {
 		cfg.WorkerConcurrency = 1
+	}
+	if cfg.MaxLoadedEngines < 1 {
+		cfg.MaxLoadedEngines = 1
 	}
 	if cfg.SessionDays < 1 {
 		cfg.SessionDays = 30

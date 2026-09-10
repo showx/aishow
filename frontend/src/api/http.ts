@@ -109,6 +109,9 @@ export interface SystemStatus {
   endpoints: EndpointHealth[]
   hardware: Hardware
   time: string
+  auto_switch_engine?: boolean
+  active_engine?: string
+  max_loaded_engines?: number
 }
 
 export interface SettingsPayload {
@@ -124,6 +127,8 @@ export interface SettingsPayload {
   has_minimax_token: boolean
   fasth3_url: string
   llada_image_url: string
+  auto_switch_engine?: boolean
+  max_loaded_engines?: number
 }
 
 export interface User {

@@ -12,6 +12,8 @@ if not defined LLADA_MEDIA_ROOT set "LLADA_MEDIA_ROOT=D:\code\aishow\backend\dat
 if not defined LLADA_HOST set "LLADA_HOST=127.0.0.1"
 if not defined LLADA_PORT set "LLADA_PORT=30020"
 set "PYTHONUNBUFFERED=1"
+set "HF_HUB_OFFLINE=1"
+set "TRANSFORMERS_OFFLINE=1"
 set "PYTHONPATH=%LLADA_PYDEPS%;%LLADA_REPO%;%PYTHONPATH%"
 set "HF_HOME=F:\huggingface"
 set "MODELSCOPE_CACHE=F:\modelscope"
@@ -20,13 +22,13 @@ set "TEMP=F:\tmp"
 
 if not exist "%LLADA_REPO%\src" (
   echo 找不到 LLaDA-Image 源码: %LLADA_REPO%
-  pause
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )
 if not exist "%LLADA_MODEL%\model_index.json" (
   echo 找不到权重: %LLADA_MODEL%
   echo 请先等权重下载完成，或把 LLADA_MODEL 指到本地 snapshot。
-  pause
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )
 
@@ -34,4 +36,4 @@ cd /d D:\code\aishow
 "%LLADA_PYTHON%" D:\code\aishow\backend\python\llada_image_server.py
 echo.
 echo 边车已退出。看到 ready / listening 之前请不要关窗口。
-pause
+if /i not "%AISHOW_HEADLESS%"=="1" pause

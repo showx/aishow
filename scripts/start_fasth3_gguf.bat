@@ -21,12 +21,12 @@ if not exist "%TRITON_CACHE_DIR%" mkdir "%TRITON_CACHE_DIR%"
 
 if not exist "%COMFY_PY%" (
   echo 找不到 ComfyUI Python: %COMFY_PY%
-  pause
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )
 if not exist "F:\models\fasth3-gguf\diffusion_models\FastH3-comfy-Q4_K_M.gguf" (
   echo 找不到 FastH3 Q4 GGUF。请先跑 scripts\download_fasth3_gguf.ps1
-  pause
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )
 
@@ -44,7 +44,7 @@ if not errorlevel 1 goto comfy_ok
 set /a _n+=1
 if !_n! GEQ 90 (
   echo ComfyUI 90 秒还没起来，请看「FastH3 ComfyUI」窗口。
-  pause
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )
 goto wait_comfy
@@ -58,4 +58,4 @@ cd /d D:\code\aishow
 "%COMFY_PY%" D:\code\aishow\backend\python\fasth3_gguf_server.py
 echo.
 echo FastH3 GGUF 边车已退出。
-pause
+if /i not "%AISHOW_HEADLESS%"=="1" pause

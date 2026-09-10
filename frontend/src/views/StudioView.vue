@@ -1,13 +1,18 @@
 <template>
   <div class="studio">
     <section class="panel composer">
+      <div class="callout" :class="autoSwitch ? 'ok' : 'warn'">
+        <strong>{{ autoSwitch ? '离线也能用，先投入队列即可' : '当前不会自动启动离线模型' }}</strong>
+        <p v-if="autoSwitch">「在线」= 已经加载到显存。「可排队」= 还没加载，但现在就能投。后台默认同时只加载 1 个模型：新的起来后，其它边车会被关掉。24GB 请保持这个上限。</p>
+        <p v-else>关掉自动切换后，只有「在线」引擎能真正跑起来。离线引擎仍可点选填写，但提交后会失败，除非你先手动开 bat，或重新打开下方自动切换。</p>
+      </div>
       <div class="seg">
         <button
           v-for="e in visibleEngines"
           :key="e.id"
-          :class="{ active: form.engine === e.id, offline: !e.online }"
+          :class="{ active: form.engine === e.id, queued: !e.online && autoSwitch, offline: !e.online && !autoSwitch }"
           @click="pickEngine(e.id)"
-        >{{ e.label }}<small>{{ e.online ? '在线' : '离线' }}</small></button>
+        >{{ e.label }}<small>{{ engineBadge(e.online) }}</small></button>
       </div>
       <p class="hint">{{ engineHint }}</p>
 
@@ -104,20 +109,27 @@
       </details>
 
       <div class="actions">
-        <div class="muted">{{ actionHint }}</div>
-        <button class="btn btn-primary" :disabled="busy" @click="submit">{{ busy ? '投递中…' : '投入队列' }}</button>
+        <div class="action-copy">
+          <div class="muted">{{ actionHint }}</div>
+          <label class="check switch">
+            <input type="checkbox" :checked="autoSwitch" @change="setAutoSwitch(($event.target as HTMLInputElement).checked)" />
+            排队时自动切换模型（离线引擎也能投；跑完当前引擎再关旧启新）
+          </label>
+        </div>
+        <button class="btn btn-primary" :disabled="busy" @click="submit">{{ submitLabel }}</button>
       </div>
     </section>
 
     <aside class="panel side">
       <div class="row-head"><h2>队列预览</h2></div>
-      <div v-if="preview.length === 0" class="muted">工坊提交后会出现在这里。</div>
+      <div v-if="preview.length === 0" class="muted">离线引擎提交后也会出现在这里，轮到时再启动模型。</div>
       <div v-for="job in preview" :key="job.id" class="item">
         <div class="item-top">
           <strong>{{ job.title }}</strong>
           <span class="pill" :class="'status-' + job.status">{{ statusLabel[job.status] }}</span>
         </div>
         <div class="muted">{{ engineName(job.engine) }} · {{ job.stage }} · {{ jobMeta(job) }}</div>
+        <div class="muted">{{ jobTime(job) }}</div>
         <div class="bar"><i :style="{ width: job.progress + '%' }"></i></div>
         <div class="item-ops">
           <button class="btn btn-danger" type="button" @click="askDelete(job)">删除</button>
@@ -228,13 +240,13 @@ const engineOnline = computed(() => {
   return map
 })
 const visibleEngines = computed(() =>
-  engines
-    .map(e => ({ ...e, online: !!engineOnline.value[e.id] }))
-    .sort((a, b) => {
-      if (a.online !== b.online) return a.online ? -1 : 1
-      return enginePref.indexOf(a.id) - enginePref.indexOf(b.id)
-    }),
+  engines.map(e => ({ ...e, online: !!engineOnline.value[e.id] })),
 )
+
+function engineBadge(online: boolean) {
+  if (online) return '在线'
+  return autoSwitch.value ? '可排队' : '离线'
+}
 
 function preferredOnlineEngine(): JobEngine {
   const online = enginePref.filter(id => engineOnline.value[id])
@@ -275,13 +287,22 @@ const visibleRatios = computed(() => {
   return ratios
 })
 const minDuration = computed(() => 2)
+const autoSwitch = computed(() => {
+  if (store.settings?.auto_switch_engine !== undefined) return store.settings.auto_switch_engine
+  if (store.system?.auto_switch_engine !== undefined) return store.system.auto_switch_engine
+  return true
+})
+const selectedOnline = computed(() => !!engineOnline.value[form.engine])
 const engineHint = computed(() => {
-  const online = engineOnline.value[form.engine]
-  const offline = online ? '' : '当前节点离线，请改选带「在线」的引擎。'
-  if (isLLada.value) return ['LLaDA-Image 是开源 6B 文生图 / 指令编辑模型。先启动本机边车，再把推理模式设成 auto。', offline].filter(Boolean).join(' ')
-  if (isFastH3.value) return ['本地 FastH3 GGUF Q4（ComfyUI 4-step + VSA）。只支持文生。先跑 start_fasth3_gguf.bat，推理模式设成 auto。', offline].filter(Boolean).join(' ')
-  if (isRef2VAInt8.value) return ['Comfy-Org pruned INT8 参考生成，最多 9 张参考图。先跑 start_h3_ref2va_int8.bat。24GB 不要和 NF4 边车同时开。', offline].filter(Boolean).join(' ')
-  return ['本地 H3-Base NF4：文生 / 首尾帧走 start_h3_nf4.bat（30010）。参考生成请改选「H3 Ref2VA INT8」。', offline].filter(Boolean).join(' ')
+  const status = selectedOnline.value
+    ? '这个引擎已加载，提交后会马上开跑。'
+    : (autoSwitch.value
+      ? '这个引擎还没加载，但可以使用：点「投入队列」即可，轮到时会自动启动。'
+      : '这个引擎还没加载。先打开自动切换，或手动跑对应 bat，否则提交会失败。')
+  if (isLLada.value) return `LLaDA-Image：开源文生图 / 指令编辑。本地 Turbo 权重约 46GB，第一次（或刚切过来）要读盘上 GPU，等几分钟是正常的。${status}`
+  if (isFastH3.value) return `FastH3 GGUF Q4：只支持文生。${status}`
+  if (isRef2VAInt8.value) return `Ref2VA INT8：参考生成，最多 9 张图。${status}`
+  return `H3-Base NF4：文生 / 首尾帧。参考生成请改选「H3 Ref2VA INT8」。${status}`
 })
 const resolutionHint = computed(() => {
   if (isLLada.value) return '文生图边长需能被 16 整除；指令编辑需能被 32 整除。默认 1024。'
@@ -290,10 +311,14 @@ const resolutionHint = computed(() => {
   return 'NF4 24GB 推荐 480p；720p / 1080p 更慢，也可能撑满显存。'
 })
 const actionHint = computed(() => {
-  if (isLLada.value) return '将任务投入队列，由工位调用本机 LLaDA-Image /v1/images。'
-  if (isFastH3.value) return '将任务投入队列，由工位调用 FastH3 GGUF 边车 /v1/videos（模型别名 fasth3）。'
-  if (isRef2VAInt8.value) return '将任务投入队列，由工位调用 Ref2VA INT8 边车 /v1/videos（30011 → ComfyUI）。'
-  return '将生成任务投入本地队列，由工位调用 NF4 / SGLang FL2VA（30010）。'
+  if (!autoSwitch.value) return '只有当前在线的引擎会真正推理。离线引擎请先开自动切换，或手动启动边车。'
+  if (!selectedOnline.value) return '现在就可以投入队列，不必等它变成「在线」。同引擎会先跑完，再切换启动这个。'
+  return '已在线，提交后马上推理。也可以继续往队列里堆其他离线引擎的任务。'
+})
+const submitLabel = computed(() => {
+  if (busy.value) return '投递中…'
+  if (autoSwitch.value && !selectedOnline.value) return '投入队列（离线可用）'
+  return '投入队列'
 })
 const needFirst = computed(() => form.mode === 'i2va' || form.mode === 'fl2va')
 const needLast = computed(() => form.mode === 'l2va' || form.mode === 'fl2va')
@@ -307,6 +332,18 @@ const sizeHint = computed(() => {
   const { width, height } = canvasSize(form.aspect_ratio, form.short_edge)
   return `${width}×${height}`
 })
+
+async function setAutoSwitch(on: boolean) {
+  try {
+    const base = store.settings || await api.settings()
+    const next = await api.saveSettings({ ...base, auto_switch_engine: on })
+    store.settings = next
+    if (store.system) store.system = { ...store.system, auto_switch_engine: on }
+    store.flash(on ? '已开启自动切换模型' : '已关闭自动切换，只跑当前在线的引擎')
+  } catch (err: any) {
+    store.flash(err.message || '保存失败')
+  }
+}
 
 function setMode(id: JobMode) {
   form.mode = id
@@ -382,6 +419,34 @@ function jobMeta(job: Job) {
   const size = `${resolutionLabel(job.short_edge)} · ${job.aspect_ratio}`
   if (isImageJob(job)) return size
   return `${job.duration}s · ${size}`
+}
+
+function clock(value?: string | null) {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+}
+
+function took(job: Job) {
+  if (!job.started_at || !job.finished_at) return ''
+  const start = new Date(job.started_at).getTime()
+  const end = new Date(job.finished_at).getTime()
+  if (Number.isNaN(start) || Number.isNaN(end)) return ''
+  const sec = Math.max(0, Math.floor((end - start) / 1000))
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`
+}
+
+function jobTime(job: Job) {
+  if (job.status === 'queued') return `创建 ${clock(job.created_at)}`
+  if (job.started_at && job.finished_at) {
+    const cost = took(job)
+    return `开始 ${clock(job.started_at)} · 完成 ${clock(job.finished_at)}${cost ? ` · 耗时 ${cost}` : ''}`
+  }
+  if (job.started_at) return `开始 ${clock(job.started_at)}`
+  return `创建 ${clock(job.created_at)}`
 }
 
 async function uploadIf(file: File | null) {
@@ -534,7 +599,9 @@ async function submit() {
     }
     const job = await api.createJob({ ...form, conditions })
     store.upsertJob(job)
-    store.flash('已投入队列')
+    store.flash(autoSwitch.value && !engineOnline.value[form.engine]
+      ? '已排队。引擎离线没关系，轮到时会自动启动。'
+      : '已投入队列')
   } catch (err: any) {
     store.flash(err.message || '投递失败')
   } finally {
@@ -555,18 +622,34 @@ async function submit() {
 .adv { border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); }
 .adv summary { cursor: pointer; margin-bottom: 8px; }
 .check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
-.actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.actions { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; }
+.action-copy { display: grid; gap: 8px; min-width: 0; }
+.check.switch { margin-top: 0; }
 .muted { color: var(--muted); font-size: 13px; }
 .hint { font-size: 12px; color: var(--faint); line-height: 1.5; }
+.callout {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  line-height: 1.55;
+}
+.callout.ok { border-color: rgba(94, 234, 212, 0.35); background: var(--mint-dim); }
+.callout.warn { border-color: rgba(232, 184, 109, 0.4); background: var(--gold-dim); }
+.callout strong { display: block; font-size: 13px; margin-bottom: 4px; }
+.callout.ok strong { color: var(--mint); }
+.callout.warn strong { color: var(--gold); }
+.callout p { margin: 0; font-size: 12px; color: var(--muted); }
 .ticks { margin-top: 4px; }
-.seg button.offline { opacity: 0.58; }
+.seg button.offline { opacity: 0.7; }
+.seg button.queued small { color: var(--gold); }
+.seg button.offline small { color: var(--rose); }
 .seg button small {
   display: inline-block;
   margin-left: 6px;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.04em;
-  opacity: 0.8;
+  opacity: 0.9;
 }
 .item { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .item-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }

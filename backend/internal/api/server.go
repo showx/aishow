@@ -15,6 +15,7 @@ import (
 	"aishow/internal/llada"
 	"aishow/internal/metrics"
 	"aishow/internal/models"
+	"aishow/internal/orchestrator"
 	"aishow/internal/queue"
 	"aishow/internal/settings"
 	"aishow/internal/sglang"
@@ -35,10 +36,11 @@ type Server struct {
 	sg    *sglang.Client
 	ll    *llada.Client
 	hw    *metrics.Collector
+	orch  *orchestrator.Manager
 }
 
-func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store, h *hub.Hub, hw *metrics.Collector) *Server {
-	return &Server{cfg: cfg, db: db, queue: q, store: store, hub: h, sg: sglang.New(), ll: llada.New(), hw: hw}
+func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store, h *hub.Hub, hw *metrics.Collector, orch *orchestrator.Manager) *Server {
+	return &Server{cfg: cfg, db: db, queue: q, store: store, hub: h, sg: sglang.New(), ll: llada.New(), hw: hw, orch: orch}
 }
 
 func (s *Server) Router() *gin.Engine {
@@ -138,10 +140,16 @@ func (s *Server) system(c *gin.Context) {
 	s.db.Model(&models.Job{}).Where("user_id = ? AND status = ? AND finished_at >= ?", uid, models.StatusFailed, today).Count(&st.FailedToday)
 	s.db.Model(&models.Job{}).Where("user_id = ?", uid).Count(&st.TotalJobs)
 
-	flOK, flLat, flDet := s.sg.Health(snap.SGLANGFL2VAURL)
-	rfOK, rfLat, rfDet := s.sg.Health(snap.SGLANGRef2VAURL)
-	fhOK, fhLat, fhDet := s.sg.Health(snap.FastH3URL)
-	llOK, llLat, llDet := s.ll.Health(snap.LLaDAImageURL)
+	probe := func(url string) (bool, int64, string) {
+		if s.orch != nil {
+			return s.orch.Probe(url)
+		}
+		return s.sg.Health(url)
+	}
+	flOK, flLat, flDet := probe(snap.SGLANGFL2VAURL)
+	rfOK, rfLat, rfDet := probe(snap.SGLANGRef2VAURL)
+	fhOK, fhLat, fhDet := probe(snap.FastH3URL)
+	llOK, llLat, llDet := probe(snap.LLaDAImageURL)
 	st.Endpoints = []models.EndpointHealth{
 		{Name: "H3-Base FL2VA", URL: snap.SGLANGFL2VAURL, Healthy: flOK, LatencyMS: flLat, Detail: flDet},
 		{Name: "H3 Ref2VA INT8", URL: snap.SGLANGRef2VAURL, Healthy: rfOK, LatencyMS: rfLat, Detail: rfDet},
@@ -149,6 +157,16 @@ func (s *Server) system(c *gin.Context) {
 		{Name: "LLaDA-Image", URL: snap.LLaDAImageURL, Healthy: llOK, LatencyMS: llLat, Detail: llDet},
 	}
 	st.Hardware = s.hw.Snapshot()
+	if snap.AutoSwitchEngine != nil {
+		st.AutoSwitchEngine = *snap.AutoSwitchEngine
+	}
+	st.MaxLoadedEngines = 1
+	if snap.MaxLoadedEngines != nil && *snap.MaxLoadedEngines > 1 {
+		st.MaxLoadedEngines = *snap.MaxLoadedEngines
+	}
+	if s.orch != nil {
+		st.ActiveEngine = s.orch.ActiveEngine(snap)
+	}
 	c.JSON(http.StatusOK, st)
 }
 

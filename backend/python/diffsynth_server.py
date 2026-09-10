@@ -307,6 +307,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json(404, {"error": "not found"})
             return
+        if path == "/shutdown":
+            self._json(200, {"ok": True, "shutting_down": True})
+            threading.Thread(target=lambda: (time.sleep(0.35), os._exit(0)), daemon=True).start()
+            return
         if path != "/v1/videos":
             self._json(404, {"error": "not found"})
             return
