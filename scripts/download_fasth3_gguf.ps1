@@ -1,11 +1,7 @@
-# FastH3 GGUF Q4 + quantized text encoder + Comfy-Org VAEs via curl + Clash.
-# Safe to rerun; uses HTTP resume.
+# FastH3 GGUF Q4 + quantized text encoder + Comfy-Org VAEs.
 
-$ErrorActionPreference = "Continue"
-$Curl = "C:\Windows\System32\curl.exe"
-$Proxy = "http://127.0.0.1:7897"
-$Root = "F:\models\fasth3-gguf"
-Remove-Item env:HTTP_PROXY, env:HTTPS_PROXY, env:ALL_PROXY, env:http_proxy, env:https_proxy, env:PYTHONHOME -EA SilentlyContinue
+. "$PSScriptRoot\_env.ps1"
+$Root = Require-AishowEnv "FASTH3_GGUF_ROOT"
 
 $jobs = @(
     @{ Rel = "diffusion_models/FastH3-comfy-Q4_K_M.gguf"; Url = "https://huggingface.co/realrebelai/FastH3_GGUFs/resolve/main/FastH3-comfy-Q4_K_M.gguf" },
@@ -16,16 +12,14 @@ $jobs = @(
 )
 
 foreach ($j in $jobs) {
-    $dest = Join-Path $Root ($j.Rel -replace '/', '\')
-    New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+    $relWin = $j.Rel -replace "/", "\"
+    $dir = Join-Path $Root (Split-Path $relWin -Parent)
+    $out = Split-Path $relWin -Leaf
     Write-Host ">> $($j.Rel)"
-    & $Curl -L --fail --retry 8 --retry-all-errors --retry-delay 3 `
-        -C - -x $Proxy --connect-timeout 30 --max-time 0 `
-        $j.Url -o $dest
-    if ($LASTEXITCODE -ne 0) { Write-Host "WARN curl exit $LASTEXITCODE for $($j.Rel)" }
+    $null = Invoke-AishowDownload -Dir $dir -Out $out -Url $j.Url
 }
 
 Write-Host "`n=== result ==="
-Get-ChildItem $Root -Recurse -File | Where-Object { $_.Name -notmatch '^\.' } | ForEach-Object {
-    "{0,8:N2} GB  {1}" -f ($_.Length/1GB), $_.FullName
+Get-ChildItem $Root -Recurse -File | Where-Object { $_.Name -notmatch "^\." } | ForEach-Object {
+    "{0,8:N2} GB  {1}" -f ($_.Length / 1GB), $_.FullName
 }

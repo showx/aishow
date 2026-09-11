@@ -6,6 +6,14 @@
         <p v-if="autoSwitch">「在线」= 已经加载到显存。「可排队」= 还没加载，但现在就能投。后台默认同时只加载 1 个模型：新的起来后，其它边车会被关掉。24GB 请保持这个上限。</p>
         <p v-else>关掉自动切换后，只有「在线」引擎能真正跑起来。离线引擎仍可点选填写，但提交后会失败，除非你先手动开 bat，或重新打开下方自动切换。</p>
       </div>
+      <div v-if="reusedTitle" class="callout ok">
+        <strong>已载入「{{ reusedTitle }}」的参数</strong>
+        <p>原任务不会被覆盖。改提示词、素材或 Seed 后点「投入队列」即可再生成。</p>
+        <div class="reuse-ops">
+          <button class="btn" type="button" @click="rollSeed">换一个 Seed</button>
+          <button v-if="reusedEnhanced" class="btn" type="button" @click="applyEnhancedPrompt">用增强提示</button>
+        </div>
+      </div>
       <div class="seg">
         <button
           v-for="e in visibleEngines"
@@ -79,13 +87,13 @@
       <details class="adv">
         <summary>高级采样</summary>
         <div v-if="isLLada" class="grid-3">
-          <div class="field"><label>Seed</label><input v-model.number="form.seed" class="input" type="number"></div>
+          <div class="field"><label>Seed <button class="link" type="button" @click="rollSeed">随机</button></label><input v-model.number="form.seed" class="input" type="number"></div>
           <div class="field"><label>Steps</label><input v-model.number="form.steps" class="input" type="number"></div>
           <div class="field"><label>Guidance</label><input v-model.number="form.flow_shift" class="input" type="number" step="0.1"></div>
           <div class="field"><label>优先级</label><input v-model.number="form.priority" class="input" type="number"></div>
         </div>
         <div v-else-if="!isFastH3" class="grid-3">
-          <div class="field"><label>Seed</label><input v-model.number="form.seed" class="input" type="number"></div>
+          <div class="field"><label>Seed <button class="link" type="button" @click="rollSeed">随机</button></label><input v-model.number="form.seed" class="input" type="number"></div>
           <div class="field"><label>Steps</label><input v-model.number="form.steps" class="input" type="number"></div>
           <div class="field"><label>Quality</label>
             <select v-model="form.quality" class="select">
@@ -98,7 +106,7 @@
           <div class="field"><label>优先级</label><input v-model.number="form.priority" class="input" type="number"></div>
         </div>
         <div v-else class="grid-3">
-          <div class="field"><label>Seed</label><input v-model.number="form.seed" class="input" type="number"></div>
+          <div class="field"><label>Seed <button class="link" type="button" @click="rollSeed">随机</button></label><input v-model.number="form.seed" class="input" type="number"></div>
           <div class="field"><label>Steps</label><input class="input" type="number" :value="5" disabled></div>
           <div class="field"><label>优先级</label><input v-model.number="form.priority" class="input" type="number"></div>
         </div>
@@ -116,7 +124,7 @@
             排队时自动切换模型（离线引擎也能投；跑完当前引擎再关旧启新）
           </label>
         </div>
-        <button class="btn btn-primary" :disabled="busy" @click="submit">{{ submitLabel }}</button>
+        <button class="btn btn-primary" :disabled="busy || historyBusy" @click="submit">{{ submitLabel }}</button>
       </div>
     </section>
 
@@ -128,10 +136,12 @@
           <strong>{{ job.title }}</strong>
           <span class="pill" :class="'status-' + job.status">{{ statusLabel[job.status] }}</span>
         </div>
-        <div class="muted">{{ engineName(job.engine) }} · {{ job.stage }} · {{ jobMeta(job) }}</div>
+        <div class="muted">{{ engineName(job.engine) }} · {{ textUnderstandingShort(job) }} · {{ job.stage }} · {{ jobMeta(job) }}</div>
         <div class="muted">{{ jobTime(job) }}</div>
         <div class="bar"><i :style="{ width: job.progress + '%' }"></i></div>
         <div class="item-ops">
+          <button class="btn" type="button" @click="fillFromJob(job)">填回</button>
+          <button class="btn" type="button" :disabled="isRegenerating(job.id)" @click="regenerate(job)">{{ isRegenerating(job.id) ? '排队中…' : '再生成' }}</button>
           <button class="btn btn-danger" type="button" @click="askDelete(job)">删除</button>
         </div>
       </div>
@@ -146,16 +156,21 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DropZone from '../components/DropZone.vue'
 import JobDeleteModal from '../components/JobDeleteModal.vue'
-import { api, canvasSize, engineName, isImageJob, resolutionLabel, resolutionPresets, statusLabel, type Job, type JobEngine, type JobMode } from '../api/http'
+import { api, canvasSize, engineName, isImageJob, resolutionLabel, resolutionPresets, statusLabel, textUnderstandingShort, type Job, type JobEngine, type JobMode } from '../api/http'
+import { asEngine, randomSeed, useJobReuse } from '../composables/useJobReuse'
 import { useAppStore } from '../stores/app'
 
 const store = useAppStore()
 const route = useRoute()
 const router = useRouter()
+const { regenerate, isRegenerating } = useJobReuse()
 const busy = ref(false)
+const historyBusy = ref(false)
 const pending = ref<Job | null>(null)
 const deleting = ref(false)
 const deleteError = ref('')
+const reusedTitle = ref('')
+const reusedEnhanced = ref('')
 const firstFrame = ref<File | null>(null)
 const lastFrame = ref<File | null>(null)
 const refImage = ref<File | null>(null)
@@ -165,11 +180,13 @@ const refAudio = ref<File | null>(null)
 
 const engines = [
   { id: 'h3' as JobEngine, label: 'H3-Base 本地' },
+  { id: 'h3-turbo' as JobEngine, label: 'H3 Turbo LoRA' },
+  { id: 'h3-pinkcherry-int8' as JobEngine, label: 'H3 PinkCherry INT8' },
   { id: 'h3-ref2va-int8' as JobEngine, label: 'H3 Ref2VA INT8' },
   { id: 'fasth3' as JobEngine, label: 'FastH3 本地' },
   { id: 'llada-image' as JobEngine, label: 'LLaDA-Image' },
 ]
-const enginePref: JobEngine[] = ['fasth3', 'h3', 'h3-ref2va-int8', 'llada-image']
+const enginePref: JobEngine[] = ['fasth3', 'h3-turbo', 'h3-pinkcherry-int8', 'h3', 'h3-ref2va-int8', 'llada-image']
 const userPickedEngine = ref(false)
 const autoPickedEngine = ref(false)
 const modes = [
@@ -226,6 +243,8 @@ const engineOnline = computed(() => {
     h3: false,
     fasth3: false,
     'h3-max': false,
+    'h3-turbo': false,
+    'h3-pinkcherry-int8': false,
     'h3-ref2va-int8': false,
     'llada-image': false,
   }
@@ -234,7 +253,9 @@ const engineOnline = computed(() => {
     const name = (ep.name || '').toLowerCase()
     if (name.includes('fasth3')) map.fasth3 = true
     else if (name.includes('llada')) map['llada-image'] = true
-    else if (name.includes('ref2va') || name.includes('int8')) map['h3-ref2va-int8'] = true
+    else if (name.includes('pinkcherry')) map['h3-pinkcherry-int8'] = true
+    else if (name.includes('ref2va')) map['h3-ref2va-int8'] = true
+    else if (name.includes('turbo')) map['h3-turbo'] = true
     else if (name.includes('fl2va') || name.includes('h3-base')) map.h3 = true
   }
   return map
@@ -267,7 +288,9 @@ function applyOnlineDefault() {
 }
 
 const isFastH3 = computed(() => form.engine === 'fasth3' || form.engine === 'h3-max')
+const isH3Turbo = computed(() => form.engine === 'h3-turbo')
 const isRef2VAInt8 = computed(() => form.engine === 'h3-ref2va-int8')
+const isPinkCherry = computed(() => form.engine === 'h3-pinkcherry-int8')
 const isLLada = computed(() => form.engine === 'llada-image')
 const visibleModes = computed(() => {
   if (isLLada.value) return imageModes
@@ -275,15 +298,15 @@ const visibleModes = computed(() => {
   if (isRef2VAInt8.value) return modes.filter(m => m.id === 'ref2va')
   return modes.filter(m => m.id !== 'ref2va')
 })
-const visibleDurations = computed(() => (isFastH3.value || isRef2VAInt8.value) ? [2, 5, 8, 10, 15] : durations)
+const visibleDurations = computed(() => (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) ? [2, 5, 8, 10, 15] : durations)
 const visibleResolutions = computed(() => {
   if (isLLada.value) return imageResolutions
-  if (isFastH3.value || isRef2VAInt8.value) return fastResolutions
+  if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) return fastResolutions
   return resolutionPresets
 })
 const visibleRatios = computed(() => {
   if (isLLada.value) return imageRatios
-  if (isFastH3.value || isRef2VAInt8.value) return ratios.filter(r => r !== 'auto')
+  if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) return ratios.filter(r => r !== 'auto')
   return ratios
 })
 const minDuration = computed(() => 2)
@@ -301,12 +324,16 @@ const engineHint = computed(() => {
       : '这个引擎还没加载。先打开自动切换，或手动跑对应 bat，否则提交会失败。')
   if (isLLada.value) return `LLaDA-Image：开源文生图 / 指令编辑。本地 Turbo 权重约 46GB，第一次（或刚切过来）要读盘上 GPU，等几分钟是正常的。${status}`
   if (isFastH3.value) return `FastH3 GGUF Q4：只支持文生。${status}`
+  if (isH3Turbo.value) return `H3 Turbo LoRA：NF4 底模 + lightx2v 4 步，文生 / 首尾帧。官方 Space 的未量化版约 72GB 显存，24GB 请用本仓库这条量化路径。${status}`
+  if (isPinkCherry.value) return `PinkCherry INT8：独立边车 + 独立 ComfyUI :8189，权重在 H3_PINKCHERRY_ROOT，不和 FastH3 / Ref2VA 共用 8188。文生 / 首尾帧。${status}`
   if (isRef2VAInt8.value) return `Ref2VA INT8：参考生成，最多 9 张图。${status}`
   return `H3-Base NF4：文生 / 首尾帧。参考生成请改选「H3 Ref2VA INT8」。${status}`
 })
 const resolutionHint = computed(() => {
   if (isLLada.value) return '文生图边长需能被 16 整除；指令编辑需能被 32 整除。默认 1024。'
   if (isFastH3.value) return '训练分辨率是 768×1344 / 5 秒。24GB 建议先用 480p / 5 秒试一条。'
+  if (isH3Turbo.value) return 'LoRA 按 768p 训练。24GB 先用 480p / 5 秒 / 4 步；768p 更吃显存。'
+  if (isPinkCherry.value) return 'PinkCherry 独立 INT8。24GB 建议 480p / 5 秒 / 20 步，不要和 FastH3 / Ref2VA 同时加载。'
   if (isRef2VAInt8.value) return 'INT8 24GB 建议 480p / 5 秒 / 20 步。768p 更吃显存。'
   return 'NF4 24GB 推荐 480p；720p / 1080p 更慢，也可能撑满显存。'
 })
@@ -317,6 +344,7 @@ const actionHint = computed(() => {
 })
 const submitLabel = computed(() => {
   if (busy.value) return '投递中…'
+  if (historyBusy.value) return '载入历史参数…'
   if (autoSwitch.value && !selectedOnline.value) return '投入队列（离线可用）'
   return '投入队列'
 })
@@ -348,6 +376,8 @@ async function setAutoSwitch(on: boolean) {
 function setMode(id: JobMode) {
   form.mode = id
   if (form.engine === 'h3-ref2va-int8' && form.steps === 50) form.steps = 20
+  if (form.engine === 'h3-pinkcherry-int8' && form.steps === 50) form.steps = 20
+  if (form.engine === 'h3-turbo' && (form.steps === 50 || form.steps === 0)) form.steps = 4
 }
 
 function setEngine(id: JobEngine) {
@@ -362,10 +392,26 @@ function setEngine(id: JobEngine) {
   }
   if (form.mode === 't2i' || form.mode === 'i2i') form.mode = 't2va'
   if (form.quality === 'turbo' || form.quality === 'base') form.quality = 'lossless'
-  if (form.flow_shift === 1 || form.flow_shift === 5) form.flow_shift = 12
+  if (form.flow_shift === 1 || form.flow_shift === 5 || form.flow_shift === 6) form.flow_shift = 12
   if (form.steps === 4) form.steps = 50
+  if (id === 'h3-turbo') {
+    if (form.mode === 'ref2va') form.mode = 't2va'
+    form.steps = 4
+    form.flow_shift = 6
+    form.quality = 'turbo'
+    form.short_edge = form.short_edge >= 640 ? 768 : 480
+    if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
+    return
+  }
   if (id === 'h3-ref2va-int8') {
     form.mode = 'ref2va'
+    form.steps = 20
+    form.short_edge = form.short_edge >= 640 ? 768 : 480
+    if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
+    return
+  }
+  if (id === 'h3-pinkcherry-int8') {
+    if (form.mode === 'ref2va') form.mode = 't2va'
     form.steps = 20
     form.short_edge = form.short_edge >= 640 ? 768 : 480
     if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
@@ -454,12 +500,19 @@ async function uploadIf(file: File | null) {
   return api.upload(file)
 }
 
-function asEngine(engine?: string, mode?: string): JobEngine {
-  if (engine === 'fasth3' || engine === 'h3-max') return 'fasth3'
-  if (engine === 'h3-ref2va-int8') return 'h3-ref2va-int8'
-  if (engine === 'llada-image') return 'llada-image'
-  if (mode === 'ref2va') return 'h3-ref2va-int8'
-  return 'h3'
+function rollSeed() {
+  form.seed = randomSeed()
+}
+
+function applyEnhancedPrompt() {
+  if (!reusedEnhanced.value) return
+  form.prompt = reusedEnhanced.value
+  store.flash('已换成增强提示，可继续修改')
+}
+
+async function fillFromJob(job: Job) {
+  userPickedEngine.value = true
+  await applyHistory(job.id)
 }
 
 async function fileFromUpload(uploadId: string, filename: string) {
@@ -473,55 +526,69 @@ async function fileFromUpload(uploadId: string, filename: string) {
   }
 }
 
-async function applyHistory(id: string) {
-  let job: Job | undefined = store.jobs.find(j => j.id === id)
+async function applyHistory(id: string, useEnhanced = false) {
+  historyBusy.value = true
   try {
-    job = await api.job(id)
-  } catch {
-    if (!job) {
-      store.flash('找不到这条历史任务')
-      return
+    let job: Job | undefined = store.jobs.find(j => j.id === id)
+    try {
+      job = await api.job(id)
+    } catch {
+      if (!job) {
+        store.flash('找不到这条历史任务')
+        return
+      }
     }
+    if (!job) return
+    form.engine = asEngine(job.engine, job.mode)
+    form.mode = job.mode
+    const enhanced = (job.enhanced_prompt || '').trim()
+    reusedTitle.value = job.title || '历史任务'
+    reusedEnhanced.value = enhanced && enhanced !== job.prompt ? enhanced : ''
+    form.prompt = useEnhanced && reusedEnhanced.value ? reusedEnhanced.value : job.prompt
+    form.duration = job.duration || 5
+    form.aspect_ratio = job.aspect_ratio || (form.engine === 'llada-image' ? '1:1' : '16:9')
+    form.short_edge = job.short_edge
+    form.seed = job.seed
+    form.steps = job.steps
+    form.flow_shift = job.flow_shift
+    form.audio_flow_shift = job.audio_flow_shift
+    form.quality = job.quality
+    form.enhance_prompt = job.enhance_prompt
+    form.priority = job.priority
+    firstFrame.value = null
+    lastFrame.value = null
+    refImage.value = null
+    refImages.value = []
+    refVideo.value = null
+    refAudio.value = null
+    const images: File[] = []
+    let missing = 0
+    for (const asset of job.assets || []) {
+      const file = await fileFromUpload(asset.upload_id, asset.filename)
+      if (!file) {
+        missing += 1
+        continue
+      }
+      if (asset.role === 'keyframe' && asset.frame_index === -1) lastFrame.value = file
+      else if (asset.role === 'keyframe') firstFrame.value = file
+      else if (asset.type === 'video') refVideo.value = file
+      else if (asset.type === 'audio') refAudio.value = file
+      else images.push(file)
+    }
+    refImages.value = images.slice(0, 9)
+    refImage.value = images[0] || null
+    if (missing) store.flash(`已载入历史参数，有 ${missing} 个素材未能找回`)
+    else store.flash('已载入历史参数，可修改后重新生成')
+  } finally {
+    historyBusy.value = false
   }
-  if (!job) return
-  form.engine = asEngine(job.engine, job.mode)
-  form.mode = job.mode
-  form.prompt = job.prompt
-  form.duration = job.duration || 5
-  form.aspect_ratio = job.aspect_ratio || (form.engine === 'llada-image' ? '1:1' : '16:9')
-  form.short_edge = job.short_edge
-  form.seed = job.seed
-  form.steps = job.steps
-  form.flow_shift = job.flow_shift
-  form.audio_flow_shift = job.audio_flow_shift
-  form.quality = job.quality
-  form.enhance_prompt = job.enhance_prompt
-  form.priority = job.priority
-  firstFrame.value = null
-  lastFrame.value = null
-  refImage.value = null
-  refImages.value = []
-  refVideo.value = null
-  refAudio.value = null
-  const images: File[] = []
-  for (const asset of job.assets || []) {
-    const file = await fileFromUpload(asset.upload_id, asset.filename)
-    if (!file) continue
-    if (asset.role === 'keyframe' && asset.frame_index === -1) lastFrame.value = file
-    else if (asset.role === 'keyframe') firstFrame.value = file
-    else if (asset.type === 'video') refVideo.value = file
-    else if (asset.type === 'audio') refAudio.value = file
-    else images.push(file)
-  }
-  refImages.value = images.slice(0, 9)
-  refImage.value = images[0] || null
-  store.flash('已载入历史参数')
 }
 
 watch(() => String(route.query.reuse || ''), async (id) => {
   if (!id) return
   userPickedEngine.value = true
-  await applyHistory(id)
+  const enhanced = String(route.query.enhanced || '') === '1'
+  await applyHistory(id, enhanced)
   router.replace({ name: 'studio' })
 }, { immediate: true })
 
@@ -564,7 +631,7 @@ async function submit() {
     store.flash('H3 Ref2VA INT8 只支持参考生成')
     return
   }
-  if (form.engine === 'h3' && form.mode === 'ref2va') {
+  if ((form.engine === 'h3' || form.engine === 'h3-turbo' || form.engine === 'h3-pinkcherry-int8') && form.mode === 'ref2va') {
     store.flash('参考生成请改选「H3 Ref2VA INT8」')
     return
   }
@@ -639,6 +706,11 @@ async function submit() {
 .callout.ok strong { color: var(--mint); }
 .callout.warn strong { color: var(--gold); }
 .callout p { margin: 0; font-size: 12px; color: var(--muted); }
+.reuse-ops { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.link {
+  border: 0; background: transparent; color: var(--mint); cursor: pointer;
+  font-size: 11px; padding: 0; letter-spacing: 0.04em; text-transform: none;
+}
 .ticks { margin-top: 4px; }
 .seg button.offline { opacity: 0.7; }
 .seg button.queued small { color: var(--gold); }
@@ -653,7 +725,7 @@ async function submit() {
 }
 .item { padding: 12px 0; border-bottom: 1px solid var(--line); }
 .item-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.item-ops { display: flex; justify-content: flex-end; margin-top: 10px; }
+.item-ops { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .bar { margin-top: 8px; height: 5px; background: rgba(255,255,255,0.08); border-radius: 99px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--mint); }
 .row-head h2 { font-size: 16px; }

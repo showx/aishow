@@ -1,0 +1,56 @@
+@echo off
+rem Shared loader. Do not setlocal; caller needs these variables.
+rem Usage: call "%~dp0_env.bat"
+
+set "AISHOW_SCRIPTS=%~dp0"
+for %%I in ("%AISHOW_SCRIPTS%..") do set "AISHOW_ROOT=%%~fI"
+
+if exist "%AISHOW_SCRIPTS%paths.bat" call "%AISHOW_SCRIPTS%paths.bat"
+
+if not defined AISHOW_MEDIA_ROOT set "AISHOW_MEDIA_ROOT=%AISHOW_ROOT%\backend\data\media"
+if not defined H3_MEDIA_ROOT set "H3_MEDIA_ROOT=%AISHOW_MEDIA_ROOT%"
+if not defined LLADA_MEDIA_ROOT set "LLADA_MEDIA_ROOT=%AISHOW_MEDIA_ROOT%"
+
+if defined H3_ROOT if not defined H3_NF4_DIR set "H3_NF4_DIR=%H3_ROOT%\models\MiniMax-H3-NF4"
+if defined H3_ROOT if not defined H3_PROCESSOR set "H3_PROCESSOR=%H3_ROOT%\models\MiniMax-H3\FL2VA\processor"
+if defined H3_ROOT if not defined H3_LORA_DIR set "H3_LORA_DIR=%H3_ROOT%\models\loras"
+if defined H3_ROOT if not defined H3_OUT_DIR set "H3_OUT_DIR=%H3_ROOT%\tmp\aishow-jobs"
+if defined H3_ROOT if not defined COMFY_ROOT set "COMFY_ROOT=%H3_ROOT%\ComfyUI_windows_portable"
+if defined H3_ROOT if not defined DIFFSYNTH_ROOT set "DIFFSYNTH_ROOT=%H3_ROOT%\repo\DiffSynth-Studio-main"
+if defined H3_ROOT if not defined AISHOW_TMP set "AISHOW_TMP=%H3_ROOT%\tmp"
+
+if defined COMFY_ROOT if not defined COMFY_PY set "COMFY_PY=%COMFY_ROOT%\python_embeded\python.exe"
+if defined COMFY_PY if not defined PYTHON set "PYTHON=%COMFY_PY%"
+if defined COMFY_ROOT if not defined FASTH3_COMFY_OUTPUT set "FASTH3_COMFY_OUTPUT=%COMFY_ROOT%\ComfyUI\output"
+if defined COMFY_ROOT if not defined H3_REF2VA_COMFY_ROOT set "H3_REF2VA_COMFY_ROOT=%COMFY_ROOT%\ComfyUI"
+if defined COMFY_ROOT if not defined H3_REF2VA_COMFY_OUTPUT set "H3_REF2VA_COMFY_OUTPUT=%COMFY_ROOT%\ComfyUI\output"
+if defined COMFY_ROOT if not defined H3_REF2VA_COMFY_INPUT set "H3_REF2VA_COMFY_INPUT=%COMFY_ROOT%\ComfyUI\input"
+if defined COMFY_ROOT if not defined H3_PINKCHERRY_COMFY_ROOT set "H3_PINKCHERRY_COMFY_ROOT=%COMFY_ROOT%\ComfyUI"
+
+if defined MODELS_ROOT if not defined FASTH3_GGUF_ROOT set "FASTH3_GGUF_ROOT=%MODELS_ROOT%\fasth3-gguf"
+if defined MODELS_ROOT if not defined H3_PINKCHERRY_ROOT set "H3_PINKCHERRY_ROOT=%MODELS_ROOT%\pinkcherry-h3"
+if defined MODELS_ROOT if not defined FASTH3_OUT_DIR set "FASTH3_OUT_DIR=%MODELS_ROOT%\aishow-fasth3-out"
+if defined MODELS_ROOT if not defined H3_PINKCHERRY_OUT_DIR set "H3_PINKCHERRY_OUT_DIR=%MODELS_ROOT%\aishow-pinkcherry-out"
+if defined MODELS_ROOT if not defined FASTH3_LOCAL_DIR if exist "%MODELS_ROOT%\FastVideo-Minimax-FastH3-Preview-v0.2\modular_model_index.json" set "FASTH3_LOCAL_DIR=%MODELS_ROOT%\FastVideo-Minimax-FastH3-Preview-v0.2"
+
+if not defined FASTH3_OUT_DIR set "FASTH3_OUT_DIR=%AISHOW_ROOT%\backend\data\sidecar-out\fasth3"
+if not defined H3_PINKCHERRY_OUT_DIR set "H3_PINKCHERRY_OUT_DIR=%AISHOW_ROOT%\backend\data\sidecar-out\pinkcherry"
+if not defined H3_REF2VA_OUT_DIR set "H3_REF2VA_OUT_DIR=%FASTH3_OUT_DIR%"
+
+if defined AISHOW_TMP if not defined TEMP set "TEMP=%AISHOW_TMP%"
+if defined AISHOW_TMP if not defined TMP set "TMP=%AISHOW_TMP%"
+if defined AISHOW_TMP if not defined TRITON_CACHE_DIR set "TRITON_CACHE_DIR=%AISHOW_TMP%\triton-cache"
+if defined AISHOW_TMP if not defined TRITON_HOME set "TRITON_HOME=%AISHOW_TMP%\triton-home"
+if defined AISHOW_TMP if not defined H3_PINKCHERRY_COMFY_HOME set "H3_PINKCHERRY_COMFY_HOME=%AISHOW_TMP%\pinkcherry-comfy"
+
+if defined H3_PINKCHERRY_COMFY_HOME if not defined H3_PINKCHERRY_COMFY_OUTPUT set "H3_PINKCHERRY_COMFY_OUTPUT=%H3_PINKCHERRY_COMFY_HOME%\output"
+if defined H3_PINKCHERRY_COMFY_HOME if not defined H3_PINKCHERRY_COMFY_INPUT set "H3_PINKCHERRY_COMFY_INPUT=%H3_PINKCHERRY_COMFY_HOME%\input"
+
+if defined LLADA_REPO if not defined LLADA_PYDEPS set "LLADA_PYDEPS=%LLADA_REPO%\pydeps"
+if defined LLADA_REPO if not defined LLADA_OUT_DIR set "LLADA_OUT_DIR=%LLADA_REPO%\tmp\aishow-jobs"
+if defined COMFY_PY if not defined LLADA_PYTHON set "LLADA_PYTHON=%COMFY_PY%"
+
+if defined COMFY_ROOT if defined FASTH3_GGUF_ROOT if not defined FASTH3_CLIP_DIRS set "FASTH3_CLIP_DIRS=%COMFY_ROOT%\ComfyUI\models\text_encoders;%FASTH3_GGUF_ROOT%\text_encoders"
+if defined FASTH3_GGUF_ROOT if not defined FASTH3_CLIP_DIRS set "FASTH3_CLIP_DIRS=%FASTH3_GGUF_ROOT%\text_encoders"
+if defined COMFY_ROOT if defined FASTH3_GGUF_ROOT if not defined H3_REF2VA_CLIP_DIRS set "H3_REF2VA_CLIP_DIRS=%FASTH3_GGUF_ROOT%\text_encoders;%COMFY_ROOT%\ComfyUI\models\text_encoders"
+if defined FASTH3_GGUF_ROOT if not defined H3_REF2VA_CLIP_DIRS set "H3_REF2VA_CLIP_DIRS=%FASTH3_GGUF_ROOT%\text_encoders"

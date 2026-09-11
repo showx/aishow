@@ -25,7 +25,10 @@ type Config struct {
 	MiniMaxAPIBase    string
 	MiniMaxAPIToken   string
 	FastH3URL         string
-	LLaDAImageURL     string
+	H3TurboURL        string
+	H3PinkCherryURL      string
+	PinkCherryComfyURL   string
+	LLaDAImageURL        string
 	AutoSwitchEngine  bool
 	MaxLoadedEngines  int
 	RepoRoot          string
@@ -56,7 +59,10 @@ func Load() Config {
 		MiniMaxAPIBase:    strings.TrimRight(env("AISHOW_MINIMAX_API_BASE", "https://api.minimaxi.com"), "/"),
 		MiniMaxAPIToken:   env("AISHOW_MINIMAX_API_TOKEN", ""),
 		FastH3URL:         strings.TrimRight(env("AISHOW_FASTH3_URL", "http://127.0.0.1:8000"), "/"),
-		LLaDAImageURL:     strings.TrimRight(env("AISHOW_LLADA_IMAGE_URL", "http://127.0.0.1:30020"), "/"),
+		H3TurboURL:        strings.TrimRight(env("AISHOW_H3_TURBO_URL", "http://127.0.0.1:30012"), "/"),
+		H3PinkCherryURL:    strings.TrimRight(env("AISHOW_H3_PINKCHERRY_URL", "http://127.0.0.1:30013"), "/"),
+		PinkCherryComfyURL: strings.TrimRight(env("AISHOW_PINKCHERRY_COMFY_URL", "http://127.0.0.1:8189"), "/"),
+		LLaDAImageURL:      strings.TrimRight(env("AISHOW_LLADA_IMAGE_URL", "http://127.0.0.1:30020"), "/"),
 		AutoSwitchEngine:  envBool("AISHOW_AUTO_SWITCH_ENGINE", true),
 		MaxLoadedEngines:  envInt("AISHOW_MAX_LOADED_ENGINES", 1),
 		RepoRoot:          env("AISHOW_ROOT", ""),

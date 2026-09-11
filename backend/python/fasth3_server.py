@@ -20,6 +20,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from aishow_paths import env_path, sidecar_out
+
 os.environ.setdefault("FASTVIDEO_DMD_DENOISING_STEPS", "999,749,500,250")
 os.environ.setdefault("FASTVIDEO_ATTENTION_BACKEND", "VIDEO_SPARSE_ATTN_H3")
 
@@ -27,13 +29,19 @@ HOST = os.environ.get("FASTH3_HOST", "127.0.0.1")
 PORT = int(os.environ.get("FASTH3_PORT", "8000"))
 MODEL = os.environ.get("FASTH3_MODEL", "FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2")
 NUM_GPUS = int(os.environ.get("FASTH3_NUM_GPUS", "1"))
-OUT_DIR = Path(os.environ.get("FASTH3_OUT_DIR", r"E:\MiniMax-H3\tmp\aishow-fasth3"))
+OUT_DIR = env_path("FASTH3_OUT_DIR", sidecar_out("fasth3"))
 DMD_STEPS = [999, 749, 500, 250]
 
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 INFER_Q: queue.Queue[str] = queue.Queue()
 GEN = None
+TEXT_ENCODER = "minimax-h3-text-encoder"
+TEXT_ENCODER_LABEL = "Qwen3-VL 32B"
+
+
+def text_encoder_payload() -> dict:
+    return {"text_encoder": TEXT_ENCODER, "text_encoder_label": TEXT_ENCODER_LABEL}
 
 
 class JobCancelled(Exception):
@@ -248,6 +256,7 @@ class Handler(BaseHTTPRequestHandler):
                 "ready": GEN is not None,
                 "busy": current is not None,
                 "progress": (current or {}).get("progress", 0),
+                **text_encoder_payload(),
             })
             return
         m = re.fullmatch(r"/v1/videos/([^/]+)/content", path)
@@ -274,6 +283,7 @@ class Handler(BaseHTTPRequestHandler):
                 "status": job["status"],
                 "progress": job.get("progress", 0),
                 "error": job.get("error"),
+                **text_encoder_payload(),
             })
             return
         self._json(404, {"error": "not found"})
@@ -302,7 +312,7 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             JOBS[job_id] = job
         INFER_Q.put(job_id)
-        self._json(200, {"id": job_id, "object": "video", "status": "queued"})
+        self._json(200, {"id": job_id, "object": "video", "status": "queued", **text_encoder_payload()})
 
     def do_DELETE(self):
         path = self.path.split("?", 1)[0]

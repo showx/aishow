@@ -51,10 +51,14 @@
             </div>
             <div class="mono url">{{ ep.url }}</div>
             <div class="muted">{{ ep.detail }} · {{ ep.latency_ms }}ms</div>
+            <div v-if="ep.text_encoder_label || ep.text_encoder" class="muted">
+              文字理解 {{ ep.text_encoder_label || ep.text_encoder }}
+              <template v-if="ep.text_encoder && ep.text_encoder_label && ep.text_encoder !== ep.text_encoder_label"> · {{ ep.text_encoder }}</template>
+            </div>
           </div>
         </div>
         <p class="note">
-          「在线」表示权重已加载。后台默认同时只加载 1 个模型，多出来的边车会被关掉；「可排队」不是禁用，工坊仍可投递。FL2VA 文生 / 首尾帧；INT8 参考生成；FastH3 文生 4-step；LLaDA-Image 文生图。
+          「在线」表示权重已加载。后台默认同时只加载 1 个模型，多出来的边车会被关掉；「可排队」不是禁用，工坊仍可投递。每条链路会标出当前文字理解模型（H3 系是 Qwen3-VL 32B 量化档，LLaDA 是自身 6B 骨干）。
         </p>
       </article>
 
@@ -84,15 +88,16 @@
       </div>
       <div v-if="recent.length === 0" class="empty">还没有完成的任务。去工坊投一条。</div>
       <div class="recent">
-        <router-link v-for="job in recent" :key="job.id" class="clip" to="/gallery">
-          <div class="poster">
+        <div v-for="job in recent" :key="job.id" class="clip">
+          <router-link class="poster" to="/gallery">
             <img v-if="job.has_image" :src="`/api/v1/jobs/${job.id}/image`" alt="" />
             <span v-else class="play">▶</span>
             <span class="tag">{{ modeLabel[job.mode] }}</span>
-          </div>
+          </router-link>
           <div class="clip-name">{{ job.title }}</div>
           <div class="muted">{{ recentStamp(job) }}</div>
-        </router-link>
+          <button class="link" type="button" @click="reuseInStudio(job.id)">填回工坊</button>
+        </div>
       </div>
     </section>
   </div>
@@ -100,10 +105,12 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useJobReuse } from '../composables/useJobReuse'
 import { useAppStore } from '../stores/app'
 import { modeLabel, type Job } from '../api/http'
 
 const store = useAppStore()
+const { reuseInStudio } = useJobReuse()
 const cards = computed(() => [
   { kicker: 'Queue', value: store.system?.queue_depth ?? 0, label: '等待中的任务' },
   { kicker: 'Live', value: store.system?.running ?? 0, label: '正在推理' },
@@ -180,6 +187,10 @@ function recentStamp(job: Job) {
 .play { position: absolute; left: 12px; bottom: 10px; color: #fff; }
 .tag { position: absolute; right: 10px; top: 10px; font-size: 11px; color: var(--mint); }
 .clip-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link {
+  border: 0; background: transparent; color: var(--mint); cursor: pointer;
+  font-size: 12px; padding: 4px 0 0; }
+.clip { min-width: 0; }
 @media (max-width: 1100px) {
   .stats, .split, .recent, .hw-grid { grid-template-columns: 1fr 1fr; }
 }

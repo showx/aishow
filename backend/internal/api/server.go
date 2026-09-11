@@ -140,21 +140,36 @@ func (s *Server) system(c *gin.Context) {
 	s.db.Model(&models.Job{}).Where("user_id = ? AND status = ? AND finished_at >= ?", uid, models.StatusFailed, today).Count(&st.FailedToday)
 	s.db.Model(&models.Job{}).Where("user_id = ?", uid).Count(&st.TotalJobs)
 
-	probe := func(url string) (bool, int64, string) {
+	inspect := func(url string) models.SidecarHealth {
 		if s.orch != nil {
-			return s.orch.Probe(url)
+			return s.orch.Inspect(url)
 		}
-		return s.sg.Health(url)
+		return s.sg.Inspect(url)
 	}
-	flOK, flLat, flDet := probe(snap.SGLANGFL2VAURL)
-	rfOK, rfLat, rfDet := probe(snap.SGLANGRef2VAURL)
-	fhOK, fhLat, fhDet := probe(snap.FastH3URL)
-	llOK, llLat, llDet := probe(snap.LLaDAImageURL)
+	fl := inspect(snap.SGLANGFL2VAURL)
+	tb := inspect(snap.H3TurboURL)
+	pc := inspect(snap.H3PinkCherryURL)
+	rf := inspect(snap.SGLANGRef2VAURL)
+	fh := inspect(snap.FastH3URL)
+	ll := inspect(snap.LLaDAImageURL)
+	endpoint := func(name, url string, h models.SidecarHealth) models.EndpointHealth {
+		return models.EndpointHealth{
+			Name:             name,
+			URL:              url,
+			Healthy:          h.Ready,
+			LatencyMS:        h.LatencyMS,
+			Detail:           h.Detail,
+			TextEncoder:      h.TextEncoder,
+			TextEncoderLabel: h.TextEncoderLabel,
+		}
+	}
 	st.Endpoints = []models.EndpointHealth{
-		{Name: "H3-Base FL2VA", URL: snap.SGLANGFL2VAURL, Healthy: flOK, LatencyMS: flLat, Detail: flDet},
-		{Name: "H3 Ref2VA INT8", URL: snap.SGLANGRef2VAURL, Healthy: rfOK, LatencyMS: rfLat, Detail: rfDet},
-		{Name: "FastH3 · GGUF", URL: snap.FastH3URL, Healthy: fhOK, LatencyMS: fhLat, Detail: fhDet},
-		{Name: "LLaDA-Image", URL: snap.LLaDAImageURL, Healthy: llOK, LatencyMS: llLat, Detail: llDet},
+		endpoint("H3-Base FL2VA", snap.SGLANGFL2VAURL, fl),
+		endpoint("H3 Turbo LoRA", snap.H3TurboURL, tb),
+		endpoint("H3 PinkCherry INT8", snap.H3PinkCherryURL, pc),
+		endpoint("H3 Ref2VA INT8", snap.SGLANGRef2VAURL, rf),
+		endpoint("FastH3 · GGUF", snap.FastH3URL, fh),
+		endpoint("LLaDA-Image", snap.LLaDAImageURL, ll),
 	}
 	st.Hardware = s.hw.Snapshot()
 	if snap.AutoSwitchEngine != nil {
@@ -308,8 +323,12 @@ func (s *Server) createJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "H3 Ref2VA INT8 只支持参考生成"})
 		return
 	}
-	if engine == models.EngineH3 && mode == models.ModeRef2VA {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参考生成请改选「H3 Ref2VA INT8」；H3-Base 只承接文生和首尾帧"})
+	if models.IsH3PinkCherryInt8(engine) && mode == models.ModeRef2VA {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "PinkCherry INT8 只承接文生和首尾帧；参考生成请改选「H3 Ref2VA INT8」"})
+		return
+	}
+	if (engine == models.EngineH3 || models.IsH3Turbo(engine)) && mode == models.ModeRef2VA {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参考生成请改选「H3 Ref2VA INT8」；H3-Base / Turbo LoRA 只承接文生和首尾帧"})
 		return
 	}
 	if models.IsImageEngine(engine) && !models.IsImageMode(mode) {
@@ -376,8 +395,46 @@ func (s *Server) createJob(c *gin.Context) {
 			}
 			in.Steps = 5
 		}
+		if models.IsH3Turbo(engine) {
+			if in.ShortEdge >= 640 {
+				in.ShortEdge = 768
+			} else {
+				in.ShortEdge = 480
+			}
+			if in.Steps == 0 || in.Steps == 50 {
+				in.Steps = 4
+			}
+			if in.Steps < 4 {
+				in.Steps = 4
+			}
+			if in.Steps > 8 {
+				in.Steps = 8
+			}
+			if in.FlowShift == 0 || in.FlowShift == 12 {
+				in.FlowShift = 6
+			}
+			if in.Quality == "" || in.Quality == "lossless" {
+				in.Quality = "turbo"
+			}
+		}
 		if models.IsH3Ref2VAInt8(engine) && (in.Steps == 0 || in.Steps == 50) {
 			in.Steps = 20
+		}
+		if models.IsH3PinkCherryInt8(engine) {
+			if in.ShortEdge >= 640 {
+				in.ShortEdge = 768
+			} else {
+				in.ShortEdge = 480
+			}
+			if in.Steps == 0 || in.Steps == 50 {
+				in.Steps = 20
+			}
+			if in.Steps < 8 {
+				in.Steps = 8
+			}
+			if in.Steps > 50 {
+				in.Steps = 50
+			}
 		}
 		if in.ShortEdge < 256 {
 			in.ShortEdge = 256
@@ -388,7 +445,7 @@ func (s *Server) createJob(c *gin.Context) {
 		if in.AspectRatio == "" {
 			in.AspectRatio = "16:9"
 		}
-		if models.IsFastH3(engine) && in.AspectRatio == "auto" {
+		if (models.IsFastH3(engine) || models.IsH3Turbo(engine) || models.IsH3PinkCherryInt8(engine)) && in.AspectRatio == "auto" {
 			in.AspectRatio = "16:9"
 		}
 		if in.Steps == 0 {
@@ -415,28 +472,32 @@ func (s *Server) createJob(c *gin.Context) {
 	if title == "" {
 		title = clipRunes(in.Prompt, 18)
 	}
+	textID, textLabel := models.DescribeTextEncoder(engine, "")
 	job := models.Job{
-		ID:             uuid.NewString(),
-		UserID:         currentUserID(c),
-		Title:          title,
-		Mode:           mode,
-		Engine:         engine,
-		Status:         models.StatusQueued,
-		Priority:       in.Priority,
-		Prompt:         in.Prompt,
-		Duration:       in.Duration,
-		AspectRatio:    in.AspectRatio,
-		ShortEdge:      in.ShortEdge,
-		Seed:           seed,
-		Steps:          in.Steps,
-		FlowShift:      in.FlowShift,
-		AudioFlowShift: in.AudioFlowShift,
-		Quality:        in.Quality,
-		EnhancePrompt:  in.EnhancePrompt,
-		Outputs:        in.Outputs,
-		Stage:          "排队中",
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		ID:               uuid.NewString(),
+		UserID:           currentUserID(c),
+		Title:            title,
+		Mode:             mode,
+		Engine:           engine,
+		Status:           models.StatusQueued,
+		Priority:         in.Priority,
+		Prompt:           in.Prompt,
+		TextEncoder:      textID,
+		TextEncoderLabel: textLabel,
+		PromptRewriter:   models.PromptRewriterFor(engine, in.EnhancePrompt),
+		Duration:         in.Duration,
+		AspectRatio:      in.AspectRatio,
+		ShortEdge:        in.ShortEdge,
+		Seed:             seed,
+		Steps:            in.Steps,
+		FlowShift:        in.FlowShift,
+		AudioFlowShift:   in.AudioFlowShift,
+		Quality:          in.Quality,
+		EnhancePrompt:    in.EnhancePrompt,
+		Outputs:          in.Outputs,
+		Stage:            "排队中",
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 	assets, err := s.buildAssets(job.ID, currentUserID(c), mode, in.Conditions)
 	if err != nil {
@@ -559,6 +620,12 @@ func (s *Server) stopRemote(job *models.Job) {
 		return
 	}
 	endpoint := snap.SGLANGFL2VAURL
+	if models.IsH3Turbo(job.Engine) {
+		endpoint = snap.H3TurboURL
+	}
+	if models.IsH3PinkCherryInt8(job.Engine) {
+		endpoint = snap.H3PinkCherryURL
+	}
 	if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
 		endpoint = snap.SGLANGRef2VAURL
 	}
@@ -707,8 +774,12 @@ func normalizeEngine(raw string) string {
 		return models.EngineH3
 	case models.EngineFastH3, models.EngineH3Max, "fast-h3", "fast_h3", "h3max", "h3_max":
 		return models.EngineFastH3
+	case models.EngineH3Turbo, "h3-turbo-lora", "turbo-lora", "h3_turbo", "h3turbo":
+		return models.EngineH3Turbo
 	case models.EngineH3Ref2VAInt8, "h3-ref2va", "ref2va-int8", "h3_ref2va_int8":
 		return models.EngineH3Ref2VAInt8
+	case models.EngineH3PinkCherryInt8, "pinkcherry", "pinkcherry-int8", "h3-pinkcherry", "h3_pinkcherry_int8":
+		return models.EngineH3PinkCherryInt8
 	case models.EngineLLadaImage, "llada", "llada_image", "lladaimage":
 		return models.EngineLLadaImage
 	default:

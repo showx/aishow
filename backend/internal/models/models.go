@@ -20,11 +20,13 @@ const (
 	ModeT2I    = "t2i"
 	ModeI2I    = "i2i"
 
-	EngineH3           = "h3"
-	EngineFastH3       = "fasth3"
-	EngineH3Max        = "h3-max"
-	EngineH3Ref2VAInt8 = "h3-ref2va-int8"
-	EngineLLadaImage   = "llada-image"
+	EngineH3               = "h3"
+	EngineFastH3           = "fasth3"
+	EngineH3Max            = "h3-max"
+	EngineH3Turbo          = "h3-turbo"
+	EngineH3Ref2VAInt8     = "h3-ref2va-int8"
+	EngineH3PinkCherryInt8 = "h3-pinkcherry-int8"
+	EngineLLadaImage       = "llada-image"
 
 	RoleAdmin = "admin"
 	RoleUser  = "user"
@@ -54,40 +56,43 @@ type Session struct {
 }
 
 type Job struct {
-	ID              string     `gorm:"primaryKey;size:36" json:"id"`
-	UserID          string     `gorm:"size:36;index" json:"user_id"`
-	Title           string     `gorm:"size:200" json:"title"`
-	Mode            string     `gorm:"size:32;index" json:"mode"`
-	Engine          string     `gorm:"size:32;index" json:"engine"`
-	Status          string     `gorm:"size:32;index" json:"status"`
-	Priority        int        `gorm:"index" json:"priority"`
-	Prompt          string     `gorm:"type:text" json:"prompt"`
-	EnhancedPrompt  string     `gorm:"type:text" json:"enhanced_prompt"`
-	Duration        float64    `json:"duration"`
-	AspectRatio     string     `gorm:"size:32" json:"aspect_ratio"`
-	ShortEdge       int        `json:"short_edge"`
-	Seed            int64      `json:"seed"`
-	Steps           int        `json:"steps"`
-	FlowShift       float64    `json:"flow_shift"`
-	AudioFlowShift  float64    `json:"audio_flow_shift"`
-	Quality         string     `gorm:"size:32" json:"quality"`
-	EnhancePrompt   bool       `json:"enhance_prompt"`
-	Outputs         int        `json:"outputs"`
-	Progress        int        `json:"progress"`
-	Stage           string     `gorm:"size:80" json:"stage"`
-	ErrorMessage    string     `gorm:"type:text" json:"error_message"`
-	RemoteID        string     `gorm:"size:128" json:"remote_id"`
-	OutputPath      string     `gorm:"size:500" json:"-"`
-	OutputSize      int64      `json:"output_size"`
-	HasVideo        bool       `json:"has_video"`
-	HasImage        bool       `json:"has_image"`
-	QueuePosition   int        `gorm:"-" json:"queue_position"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	StartedAt       *time.Time `json:"started_at"`
-	FinishedAt      *time.Time `json:"finished_at"`
-	Assets          []JobAsset `gorm:"foreignKey:JobID" json:"assets"`
-	Events          []JobEvent `gorm:"foreignKey:JobID" json:"events,omitempty"`
+	ID               string     `gorm:"primaryKey;size:36" json:"id"`
+	UserID           string     `gorm:"size:36;index" json:"user_id"`
+	Title            string     `gorm:"size:200" json:"title"`
+	Mode             string     `gorm:"size:32;index" json:"mode"`
+	Engine           string     `gorm:"size:32;index" json:"engine"`
+	Status           string     `gorm:"size:32;index" json:"status"`
+	Priority         int        `gorm:"index" json:"priority"`
+	Prompt           string     `gorm:"type:text" json:"prompt"`
+	EnhancedPrompt   string     `gorm:"type:text" json:"enhanced_prompt"`
+	TextEncoder      string     `gorm:"size:260" json:"text_encoder"`
+	TextEncoderLabel string     `gorm:"size:160" json:"text_encoder_label"`
+	PromptRewriter   string     `gorm:"size:80" json:"prompt_rewriter"`
+	Duration         float64    `json:"duration"`
+	AspectRatio      string     `gorm:"size:32" json:"aspect_ratio"`
+	ShortEdge        int        `json:"short_edge"`
+	Seed             int64      `json:"seed"`
+	Steps            int        `json:"steps"`
+	FlowShift        float64    `json:"flow_shift"`
+	AudioFlowShift   float64    `json:"audio_flow_shift"`
+	Quality          string     `gorm:"size:32" json:"quality"`
+	EnhancePrompt    bool       `json:"enhance_prompt"`
+	Outputs          int        `json:"outputs"`
+	Progress         int        `json:"progress"`
+	Stage            string     `gorm:"size:80" json:"stage"`
+	ErrorMessage     string     `gorm:"type:text" json:"error_message"`
+	RemoteID         string     `gorm:"size:128" json:"remote_id"`
+	OutputPath       string     `gorm:"size:500" json:"-"`
+	OutputSize       int64      `json:"output_size"`
+	HasVideo         bool       `json:"has_video"`
+	HasImage         bool       `json:"has_image"`
+	QueuePosition    int        `gorm:"-" json:"queue_position"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	StartedAt        *time.Time `json:"started_at"`
+	FinishedAt       *time.Time `json:"finished_at"`
+	Assets           []JobAsset `gorm:"foreignKey:JobID" json:"assets"`
+	Events           []JobEvent `gorm:"foreignKey:JobID" json:"events,omitempty"`
 }
 
 type JobAsset struct {
@@ -127,22 +132,22 @@ type JobEvent struct {
 }
 
 type CreateJobRequest struct {
-	Title          string            `json:"title"`
-	Mode           string            `json:"mode" binding:"required"`
-	Engine         string            `json:"engine"`
-	Prompt         string            `json:"prompt" binding:"required"`
-	Duration       float64           `json:"duration"`
-	AspectRatio    string            `json:"aspect_ratio"`
-	ShortEdge      int               `json:"short_edge"`
-	Seed           *int64            `json:"seed"`
-	Steps          int               `json:"steps"`
-	FlowShift      float64           `json:"flow_shift"`
-	AudioFlowShift float64           `json:"audio_flow_shift"`
-	Quality        string            `json:"quality"`
-	EnhancePrompt  bool              `json:"enhance_prompt"`
-	Outputs        int               `json:"outputs"`
-	Priority       int               `json:"priority"`
-	Conditions     []AssetCondition  `json:"conditions"`
+	Title          string           `json:"title"`
+	Mode           string           `json:"mode" binding:"required"`
+	Engine         string           `json:"engine"`
+	Prompt         string           `json:"prompt" binding:"required"`
+	Duration       float64          `json:"duration"`
+	AspectRatio    string           `json:"aspect_ratio"`
+	ShortEdge      int              `json:"short_edge"`
+	Seed           *int64           `json:"seed"`
+	Steps          int              `json:"steps"`
+	FlowShift      float64          `json:"flow_shift"`
+	AudioFlowShift float64          `json:"audio_flow_shift"`
+	Quality        string           `json:"quality"`
+	EnhancePrompt  bool             `json:"enhance_prompt"`
+	Outputs        int              `json:"outputs"`
+	Priority       int              `json:"priority"`
+	Conditions     []AssetCondition `json:"conditions"`
 }
 
 type AssetCondition struct {
@@ -165,41 +170,43 @@ type SettingsPayload struct {
 	MiniMaxAPIToken   string `json:"minimax_api_token"`
 	HasMiniMaxToken   bool   `json:"has_minimax_token"`
 	FastH3URL         string `json:"fasth3_url"`
+	H3TurboURL        string `json:"h3_turbo_url"`
+	H3PinkCherryURL   string `json:"h3_pinkcherry_url"`
 	LLaDAImageURL     string `json:"llada_image_url"`
 	AutoSwitchEngine  *bool  `json:"auto_switch_engine,omitempty"`
 	MaxLoadedEngines  *int   `json:"max_loaded_engines,omitempty"`
 }
 
 type SystemStatus struct {
-	App            string           `json:"app"`
-	Version        string           `json:"version"`
-	InferenceMode  string           `json:"inference_mode"`
-	QueueDepth     int64            `json:"queue_depth"`
-	Running        int64            `json:"running"`
-	SucceededToday int64            `json:"succeeded_today"`
-	FailedToday    int64            `json:"failed_today"`
-	TotalJobs      int64            `json:"total_jobs"`
-	WorkerSlots    int              `json:"worker_slots"`
-	Endpoints         []EndpointHealth `json:"endpoints"`
-	Hardware          Hardware         `json:"hardware"`
-	Time              time.Time        `json:"time"`
-	AutoSwitchEngine  bool             `json:"auto_switch_engine"`
-	ActiveEngine      string           `json:"active_engine"`
-	MaxLoadedEngines  int              `json:"max_loaded_engines"`
+	App              string           `json:"app"`
+	Version          string           `json:"version"`
+	InferenceMode    string           `json:"inference_mode"`
+	QueueDepth       int64            `json:"queue_depth"`
+	Running          int64            `json:"running"`
+	SucceededToday   int64            `json:"succeeded_today"`
+	FailedToday      int64            `json:"failed_today"`
+	TotalJobs        int64            `json:"total_jobs"`
+	WorkerSlots      int              `json:"worker_slots"`
+	Endpoints        []EndpointHealth `json:"endpoints"`
+	Hardware         Hardware         `json:"hardware"`
+	Time             time.Time        `json:"time"`
+	AutoSwitchEngine bool             `json:"auto_switch_engine"`
+	ActiveEngine     string           `json:"active_engine"`
+	MaxLoadedEngines int              `json:"max_loaded_engines"`
 }
 
 type Hardware struct {
-	CPUPercent     float64   `json:"cpu_percent"`
-	CPUCores       int       `json:"cpu_cores"`
-	RAMUsedGB      float64   `json:"ram_used_gb"`
-	RAMTotalGB     float64   `json:"ram_total_gb"`
-	RAMPercent     float64   `json:"ram_percent"`
-	GPUName        string    `json:"gpu_name"`
-	GPUPercent     int       `json:"gpu_percent"`
-	GPUMemUsedMB   int       `json:"gpu_mem_used_mb"`
-	GPUMemTotalMB  int       `json:"gpu_mem_total_mb"`
-	GPUTemp        int       `json:"gpu_temp"`
-	GPUs           []GPUStat `json:"gpus"`
+	CPUPercent    float64   `json:"cpu_percent"`
+	CPUCores      int       `json:"cpu_cores"`
+	RAMUsedGB     float64   `json:"ram_used_gb"`
+	RAMTotalGB    float64   `json:"ram_total_gb"`
+	RAMPercent    float64   `json:"ram_percent"`
+	GPUName       string    `json:"gpu_name"`
+	GPUPercent    int       `json:"gpu_percent"`
+	GPUMemUsedMB  int       `json:"gpu_mem_used_mb"`
+	GPUMemTotalMB int       `json:"gpu_mem_total_mb"`
+	GPUTemp       int       `json:"gpu_temp"`
+	GPUs          []GPUStat `json:"gpus"`
 }
 
 type GPUStat struct {
@@ -211,19 +218,25 @@ type GPUStat struct {
 }
 
 type EndpointHealth struct {
-	Name      string `json:"name"`
-	URL       string `json:"url"`
-	Healthy   bool   `json:"healthy"`
-	LatencyMS int64  `json:"latency_ms"`
-	Detail    string `json:"detail"`
+	Name             string `json:"name"`
+	URL              string `json:"url"`
+	Healthy          bool   `json:"healthy"`
+	LatencyMS        int64  `json:"latency_ms"`
+	Detail           string `json:"detail"`
+	TextEncoder      string `json:"text_encoder,omitempty"`
+	TextEncoderLabel string `json:"text_encoder_label,omitempty"`
 }
 
 func CanonicalEngine(engine string) string {
 	switch {
 	case IsFastH3(engine):
 		return EngineFastH3
+	case IsH3Turbo(engine):
+		return EngineH3Turbo
 	case IsH3Ref2VAInt8(engine):
 		return EngineH3Ref2VAInt8
+	case IsH3PinkCherryInt8(engine):
+		return EngineH3PinkCherryInt8
 	case IsImageEngine(engine):
 		return EngineLLadaImage
 	default:
@@ -235,8 +248,12 @@ func EngineAliases(engine string) []string {
 	switch CanonicalEngine(engine) {
 	case EngineFastH3:
 		return []string{EngineFastH3, EngineH3Max, "fast-h3", "fast_h3", "h3max", "h3_max"}
+	case EngineH3Turbo:
+		return []string{EngineH3Turbo, "h3-turbo-lora", "turbo-lora", "h3_turbo", "h3turbo"}
 	case EngineH3Ref2VAInt8:
 		return []string{EngineH3Ref2VAInt8, "h3-ref2va", "ref2va-int8", "h3_ref2va_int8"}
+	case EngineH3PinkCherryInt8:
+		return []string{EngineH3PinkCherryInt8, "pinkcherry", "pinkcherry-int8", "h3-pinkcherry", "h3_pinkcherry_int8"}
 	case EngineLLadaImage:
 		return []string{EngineLLadaImage, "llada", "llada_image"}
 	default:
@@ -248,8 +265,12 @@ func EngineLabel(engine string) string {
 	switch CanonicalEngine(engine) {
 	case EngineFastH3:
 		return "FastH3"
+	case EngineH3Turbo:
+		return "H3 Turbo LoRA"
 	case EngineH3Ref2VAInt8:
 		return "H3 Ref2VA INT8"
+	case EngineH3PinkCherryInt8:
+		return "H3 PinkCherry INT8"
 	case EngineLLadaImage:
 		return "LLaDA-Image"
 	default:
@@ -266,9 +287,27 @@ func IsFastH3(engine string) bool {
 	}
 }
 
+func IsH3Turbo(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineH3Turbo, "h3-turbo-lora", "turbo-lora", "h3_turbo", "h3turbo":
+		return true
+	default:
+		return false
+	}
+}
+
 func IsH3Ref2VAInt8(engine string) bool {
 	switch strings.ToLower(strings.TrimSpace(engine)) {
 	case EngineH3Ref2VAInt8, "h3-ref2va", "ref2va-int8", "h3_ref2va_int8":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsH3PinkCherryInt8(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineH3PinkCherryInt8, "pinkcherry", "pinkcherry-int8", "h3-pinkcherry", "h3_pinkcherry_int8":
 		return true
 	default:
 		return false

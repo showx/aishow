@@ -40,8 +40,10 @@ type Target struct {
 }
 
 type CreateResponse struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+	ID               string `json:"id"`
+	Status           string `json:"status"`
+	TextEncoder      string `json:"text_encoder"`
+	TextEncoderLabel string `json:"text_encoder_label"`
 }
 
 type StatusResponse struct {

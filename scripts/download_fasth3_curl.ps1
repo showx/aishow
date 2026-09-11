@@ -1,8 +1,11 @@
-# Resume FastH3 Preview v0.2. Uses Windows curl + Clash HTTP proxy.
+# Resume FastH3 Preview v0.2 via Windows curl.
+. "$PSScriptRoot\_env.ps1"
 $ErrorActionPreference = "Continue"
-$Curl = "C:\Windows\System32\curl.exe"
-$Proxy = "http://127.0.0.1:7897"
-$Root = "F:\models\FastVideo-Minimax-FastH3-Preview-v0.2"
+$Root = Get-AishowEnv "FASTH3_LOCAL_DIR"
+if (-not $Root) {
+    $models = Require-AishowEnv "MODELS_ROOT"
+    $Root = Join-Path $models "FastVideo-Minimax-FastH3-Preview-v0.2"
+}
 $Repo = "FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2"
 $Base = "https://huggingface.co/$Repo/resolve/main"
 $Api = "https://huggingface.co/api/models/$Repo/tree/main"
@@ -11,7 +14,7 @@ Remove-Item env:HTTP_PROXY, env:HTTPS_PROXY, env:ALL_PROXY, env:http_proxy, env:
 function Get-Tree([string]$Sub) {
     $url = if ($Sub) { "$Api/$Sub" } else { $Api }
     $tmp = Join-Path $env:TEMP ("fasth3-tree-{0}.json" -f ($Sub -replace '[\\/]', '-'))
-    & $Curl -sL --fail --max-time 45 -x $Proxy $url -o $tmp | Out-Null
+    & $Curl -sL --fail --max-time 45 @(Get-CurlProxyArgs) $url -o $tmp | Out-Null
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tmp)) { return @() }
     return @(Get-Content $tmp -Raw | ConvertFrom-Json)
 }
@@ -75,7 +78,7 @@ function Invoke-Download($item) {
     Write-Host ("==== {0} ({1:N1} MB have / {2:N1} MB need) ====" -f $item.Rel, ($item.Have/1MB), ($item.Size/1MB))
     & $Curl -L --fail -C - --retry 30 --retry-delay 2 --retry-all-errors `
         --http1.1 --speed-limit 8000 --speed-time 45 `
-        -x $Proxy -o $item.Dest "$Base/$($item.Rel)"
+        @(Get-CurlProxyArgs) -o $item.Dest "$Base/$($item.Rel)"
     $code = $LASTEXITCODE
     $now = if (Test-Path $item.Dest) { (Get-Item $item.Dest).Length } else { 0 }
     if ($item.Size -gt 0 -and $now -eq $item.Size) {

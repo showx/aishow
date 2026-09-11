@@ -96,11 +96,7 @@ func (w *Worker) resumeActive() {
 			} else if isFastH3(job.Engine) {
 				err = w.waitRemote(&job, snap.FastH3URL, job.RemoteID)
 			} else {
-				endpoint := snap.SGLANGFL2VAURL
-				if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
-					endpoint = snap.SGLANGRef2VAURL
-				}
-				err = w.waitRemote(&job, endpoint, job.RemoteID)
+				err = w.waitRemote(&job, jobEndpoint(&job, snap), job.RemoteID)
 			}
 			if err != nil {
 				if w.jobAborted(job.ID) {
@@ -175,6 +171,7 @@ func (w *Worker) process(job *models.Job) error {
 			return err
 		}
 	}
+	w.captureTextUnderstanding(job, snap)
 
 	if isLLada(job.Engine) {
 		if mode == "mock" {
@@ -202,6 +199,12 @@ func (w *Worker) process(job *models.Job) error {
 	case models.ModeRef2VA:
 		task = "ref2va"
 		endpoint = snap.SGLANGRef2VAURL
+	}
+	if models.IsH3Turbo(job.Engine) {
+		endpoint = snap.H3TurboURL
+	}
+	if models.IsH3PinkCherryInt8(job.Engine) {
+		endpoint = snap.H3PinkCherryURL
 	}
 	if models.IsH3Ref2VAInt8(job.Engine) {
 		task = "ref2va"
@@ -237,6 +240,7 @@ func (w *Worker) process(job *models.Job) error {
 		}
 		return fmt.Errorf("提交 SGLang 失败: %w", err)
 	}
+	w.mergeSidecarTextEncoder(job, created.TextEncoder, created.TextEncoderLabel)
 	_ = w.queue.Update(job, map[string]any{"remote_id": created.ID, "stage": "推理采样", "progress": 28})
 	w.queue.Log(job.ID, "info", "远程任务 "+created.ID)
 	return w.waitRemote(job, endpoint, created.ID)
@@ -325,6 +329,7 @@ func (w *Worker) processFastH3(job *models.Job, snap models.SettingsPayload, pro
 	if err != nil {
 		return fmt.Errorf("提交 FastH3 失败: %w", err)
 	}
+	w.mergeSidecarTextEncoder(job, created.TextEncoder, created.TextEncoderLabel)
 	_ = w.queue.Update(job, map[string]any{"remote_id": created.ID, "stage": "FastH3 4-step 采样", "progress": 28})
 	w.queue.Log(job.ID, "info", fmt.Sprintf("FastH3 任务 %s · %dx%d · %d 帧", created.ID, width, height, frames))
 	return w.waitRemote(job, endpoint, created.ID)
@@ -363,6 +368,7 @@ func (w *Worker) processLLada(job *models.Job, snap models.SettingsPayload, prom
 	if err != nil {
 		return fmt.Errorf("提交 LLaDA-Image 失败: %w", err)
 	}
+	w.mergeSidecarTextEncoder(job, created.TextEncoder, created.TextEncoderLabel)
 	_ = w.queue.Update(job, map[string]any{"remote_id": created.ID, "stage": "扩散采样", "progress": 28})
 	w.queue.Log(job.ID, "info", "LLaDA-Image 任务 "+created.ID)
 	return w.waitLLada(job, endpoint, created.ID)
@@ -586,6 +592,70 @@ func (w *Worker) prepareAssets(job *models.Job, snap models.SettingsPayload) ([]
 		out = append(out, cond)
 	}
 	return out, nil
+}
+
+func (w *Worker) captureTextUnderstanding(job *models.Job, snap models.SettingsPayload) {
+	encoder, label := job.TextEncoder, job.TextEncoderLabel
+	info := w.sglang.Inspect(jobEndpoint(job, snap))
+	if info.TextEncoder != "" || info.TextEncoderLabel != "" {
+		encoder, label = info.TextEncoder, info.TextEncoderLabel
+	}
+	w.applyTextUnderstanding(job, encoder, label, true)
+}
+
+func (w *Worker) mergeSidecarTextEncoder(job *models.Job, encoder, label string) {
+	if strings.TrimSpace(encoder) == "" && strings.TrimSpace(label) == "" {
+		return
+	}
+	w.applyTextUnderstanding(job, encoder, label, false)
+}
+
+func (w *Worker) applyTextUnderstanding(job *models.Job, encoder, label string, logIt bool) {
+	id, lab := models.DescribeTextEncoder(job.Engine, encoder)
+	if strings.TrimSpace(label) != "" {
+		lab = strings.TrimSpace(label)
+	}
+	if strings.TrimSpace(encoder) != "" {
+		id = models.TextEncoderBasename(encoder)
+	}
+	rewriter := models.PromptRewriterFor(job.Engine, job.EnhancePrompt)
+	_ = w.queue.Update(job, map[string]any{
+		"text_encoder":       id,
+		"text_encoder_label": lab,
+		"prompt_rewriter":    rewriter,
+	})
+	if !logIt {
+		return
+	}
+	msg := "文字理解: " + lab
+	if id != "" && id != lab {
+		msg += " · " + id
+	}
+	if rewriter != "" {
+		msg += " · 提示改写: " + rewriter
+	} else if !models.IsImageEngine(job.Engine) {
+		msg += " · 未开提示改写"
+	}
+	w.queue.Log(job.ID, "info", msg)
+}
+
+func jobEndpoint(job *models.Job, snap models.SettingsPayload) string {
+	if isLLada(job.Engine) {
+		return snap.LLaDAImageURL
+	}
+	if isFastH3(job.Engine) {
+		return snap.FastH3URL
+	}
+	if models.IsH3Turbo(job.Engine) {
+		return snap.H3TurboURL
+	}
+	if models.IsH3PinkCherryInt8(job.Engine) {
+		return snap.H3PinkCherryURL
+	}
+	if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
+		return snap.SGLANGRef2VAURL
+	}
+	return snap.SGLANGFL2VAURL
 }
 
 func timeoutFor(seconds float64) time.Duration {

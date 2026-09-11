@@ -1,18 +1,25 @@
 @echo off
 setlocal
-set "PYTHON=E:\MiniMax-H3\ComfyUI_windows_portable\python_embeded\python.exe"
-set "PYTHONPATH=E:\MiniMax-H3\repo\DiffSynth-Studio-main;%PYTHONPATH%"
-set "H3_ROOT=E:\MiniMax-H3"
-set "H3_NF4_DIR=E:\MiniMax-H3\models\MiniMax-H3-NF4"
-set "H3_PROCESSOR=E:\MiniMax-H3\models\MiniMax-H3\FL2VA\processor"
-set "H3_OUT_DIR=E:\MiniMax-H3\tmp\aishow-jobs"
-set "H3_MEDIA_ROOT=D:\code\aishow\backend\data\media"
+call "%~dp0_env.bat"
+if not defined H3_ROOT (
+  echo 缺少 H3_ROOT。请复制 scripts\paths.example.bat 为 scripts\paths.bat 并填写本机路径。
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
+  exit /b 1
+)
+if not defined PYTHON (
+  echo 缺少 PYTHON / COMFY_ROOT。
+  if /i not "%AISHOW_HEADLESS%"=="1" pause
+  exit /b 1
+)
+
 set "H3_HOST=127.0.0.1"
 set "H3_PORT=30010"
 set "PYTHONUNBUFFERED=1"
 set "DIFFSYNTH_SKIP_DOWNLOAD=True"
-cd /d D:\code\aishow
-"%PYTHON%" D:\code\aishow\backend\python\diffsynth_server.py
+if defined DIFFSYNTH_ROOT set "PYTHONPATH=%DIFFSYNTH_ROOT%;%PYTHONPATH%"
+
+cd /d "%AISHOW_ROOT%"
+"%PYTHON%" "%AISHOW_ROOT%\backend\python\diffsynth_server.py"
 echo.
 echo 边车已退出。看到 ready / listening 之前请不要关窗口。
 if /i not "%AISHOW_HEADLESS%"=="1" pause

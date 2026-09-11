@@ -22,10 +22,11 @@
             <strong>{{ job.title }}</strong>
             <span class="mono pos">#{{ job.queue_position || '—' }}</span>
           </div>
-          <div class="meta">{{ engineName(job.engine) }} · {{ modeLabel[job.mode] }} · {{ jobLine(job) }} · P{{ job.priority }}</div>
+          <div class="meta">{{ engineName(job.engine) }} · {{ textUnderstandingShort(job) }} · {{ modeLabel[job.mode] }} · {{ jobLine(job) }} · P{{ job.priority }}</div>
           <div class="meta">创建 {{ clock(job.created_at) }} · 等待 {{ elapsed(job.created_at) }}</div>
           <p>{{ job.prompt }}</p>
           <div class="ops">
+            <button class="btn" @click="reuseInStudio(job.id)">填回</button>
             <button class="btn" @click="act(() => api.bumpJob(job.id))">插队</button>
             <button class="btn" @click="act(() => api.cancelJob(job.id))">取消</button>
             <button class="btn btn-danger" @click="askDelete(job)">删除</button>
@@ -43,8 +44,9 @@
           </div>
           <div class="stage">{{ job.stage }}</div>
           <div class="bar"><i :style="{ width: job.progress + '%' }"></i></div>
-          <div class="meta">开始 {{ clock(job.started_at) }} · 已运行 {{ elapsed(job.started_at) }} · seed {{ job.seed }} · {{ job.steps }} steps</div>
+          <div class="meta">开始 {{ clock(job.started_at) }} · 已运行 {{ elapsed(job.started_at) }} · {{ textUnderstandingShort(job) }} · seed {{ job.seed }} · {{ job.steps }} steps</div>
           <div class="ops">
+            <button class="btn" @click="reuseInStudio(job.id)">填回</button>
             <button class="btn btn-danger" @click="act(() => api.cancelJob(job.id))">中止</button>
             <button class="btn" @click="askDelete(job)">删除</button>
           </div>
@@ -68,6 +70,8 @@
             @click="toggleErr(job.id)"
           >{{ job.error_message }}</p>
           <div class="ops">
+            <button class="btn" @click="reuseInStudio(job.id)">填回</button>
+            <button class="btn" :disabled="isRegenerating(job.id)" @click="regenerate(job)">{{ isRegenerating(job.id) ? '排队中…' : '再生成' }}</button>
             <button v-if="job.status !== 'succeeded'" class="btn" @click="act(() => api.retryJob(job.id))">重试</button>
             <button class="btn btn-danger" @click="askDelete(job)">删除</button>
           </div>
@@ -82,10 +86,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import JobDeleteModal from '../components/JobDeleteModal.vue'
+import { useJobReuse } from '../composables/useJobReuse'
 import { useAppStore } from '../stores/app'
-import { api, engineName, isImageJob, modeLabel, resolutionLabel, statusLabel, type Job } from '../api/http'
+import { api, engineName, isImageJob, modeLabel, resolutionLabel, statusLabel, textUnderstandingShort, type Job } from '../api/http'
 
 const store = useAppStore()
+const { reuseInStudio, regenerate, isRegenerating } = useJobReuse()
 const autoSwitch = computed(() => {
   if (store.settings?.auto_switch_engine !== undefined) return store.settings.auto_switch_engine
   if (store.system?.auto_switch_engine !== undefined) return store.system.auto_switch_engine

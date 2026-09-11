@@ -1,0 +1,10 @@
+# Template. start_h3_pinkcherry_int8.bat writes pinkcherry_extra_model_paths.local.yaml
+# from H3_PINKCHERRY_ROOT. Do not put FastH3 / Ref2VA weights here.
+pinkcherry:
+    base_path: __PINKCHERRY_ROOT__
+    is_default: true
+    diffusion_models: diffusion_models/
+    unet: diffusion_models/
+    text_encoders: text_encoders/
+    clip: text_encoders/
+    vae: vae/

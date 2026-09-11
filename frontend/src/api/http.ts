@@ -1,6 +1,6 @@
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type JobMode = 't2va' | 'i2va' | 'l2va' | 'fl2va' | 'ref2va' | 't2i' | 'i2i'
-export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-ref2va-int8' | 'llada-image'
+export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-turbo' | 'h3-ref2va-int8' | 'h3-pinkcherry-int8' | 'llada-image'
 
 export interface JobAsset {
   id: string
@@ -31,6 +31,9 @@ export interface Job {
   priority: number
   prompt: string
   enhanced_prompt: string
+  text_encoder?: string
+  text_encoder_label?: string
+  prompt_rewriter?: string
   duration: number
   aspect_ratio: string
   short_edge: number
@@ -72,6 +75,8 @@ export interface EndpointHealth {
   healthy: boolean
   latency_ms: number
   detail: string
+  text_encoder?: string
+  text_encoder_label?: string
 }
 
 export interface GPUStat {
@@ -126,6 +131,8 @@ export interface SettingsPayload {
   minimax_api_token: string
   has_minimax_token: boolean
   fasth3_url: string
+  h3_turbo_url: string
+  h3_pinkcherry_url: string
   llada_image_url: string
   auto_switch_engine?: boolean
   max_loaded_engines?: number
@@ -255,15 +262,46 @@ export const engineLabel: Record<JobEngine, string> = {
   h3: 'H3-Base',
   fasth3: 'FastH3',
   'h3-max': 'FastH3',
+  'h3-turbo': 'H3 Turbo LoRA',
   'h3-ref2va-int8': 'H3 Ref2VA INT8',
+  'h3-pinkcherry-int8': 'H3 PinkCherry INT8',
   'llada-image': 'LLaDA-Image',
 }
 
 export function engineName(engine?: string) {
   if (engine === 'fasth3' || engine === 'h3-max') return engineLabel.fasth3
+  if (engine === 'h3-turbo') return engineLabel['h3-turbo']
   if (engine === 'h3-ref2va-int8') return engineLabel['h3-ref2va-int8']
+  if (engine === 'h3-pinkcherry-int8') return engineLabel['h3-pinkcherry-int8']
   if (engine === 'llada-image') return engineLabel['llada-image']
   return engineLabel.h3
+}
+
+export function fallbackTextEncoder(engine?: string) {
+  if (engine === 'llada-image') return 'LLaDA-Image 6B'
+  if (engine === 'h3-pinkcherry-int8') return 'PinkCherry Qwen3-VL 32B'
+  if (engine === 'fasth3' || engine === 'h3-max' || engine === 'h3-ref2va-int8') return 'Qwen3-VL 32B 量化'
+  return 'Qwen3-VL 32B NF4'
+}
+
+export function textUnderstanding(job: {
+  engine?: string
+  text_encoder?: string
+  text_encoder_label?: string
+  prompt_rewriter?: string
+  enhance_prompt?: boolean
+}) {
+  const label = job.text_encoder_label || fallbackTextEncoder(job.engine)
+  const file = job.text_encoder && job.text_encoder !== label ? job.text_encoder : ''
+  const rewrite = job.prompt_rewriter || (job.enhance_prompt && job.engine !== 'llada-image' ? 'H3-Context-IR' : '')
+  let s = label
+  if (file) s += ` · ${file}`
+  if (rewrite) s += ` · 改写 ${rewrite}`
+  return s
+}
+
+export function textUnderstandingShort(job: { engine?: string; text_encoder_label?: string }) {
+  return job.text_encoder_label || fallbackTextEncoder(job.engine)
 }
 
 export function isImageJob(job: { engine?: string; mode?: string }) {

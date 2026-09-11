@@ -26,19 +26,20 @@ const (
 )
 
 type spec struct {
-	ID       string
-	Label    string
-	Script   string
+	ID        string
+	Label     string
+	Script    string
 	UsesComfy bool
+	ComfyURL  string
 }
 
 type Manager struct {
-	cfg    config.Config
-	root   string
-	http   *http.Client
-	mu     sync.Mutex
-	procs  map[string]*os.Process
-	keep   string
+	cfg   config.Config
+	root  string
+	http  *http.Client
+	mu    sync.Mutex
+	procs map[string]*os.Process
+	keep  string
 }
 
 func New(cfg config.Config) *Manager {
@@ -191,7 +192,8 @@ func (m *Manager) evictExtras(keep string, snap models.SettingsPayload, report f
 	keep = models.CanonicalEngine(keep)
 	limit := maxLoaded(snap)
 	var extras []string
-	stoppedComfyPeer := false
+	sharedComfyDirty := false
+	keepComfy := m.comfyURLFor(keep)
 	for _, id := range exclusiveEngines() {
 		if id == keep {
 			continue
@@ -209,42 +211,30 @@ func (m *Manager) evictExtras(keep string, snap models.SettingsPayload, report f
 		if i < allow {
 			continue
 		}
-		if usesComfy(other) {
-			stoppedComfyPeer = true
+		if u := m.comfyURLFor(other); u != "" && u == keepComfy {
+			sharedComfyDirty = true
 		}
 		report(fmt.Sprintf("下线 %s（同时最多加载 %d 个）", models.EngineLabel(other), limit))
 		if err := m.stopEngine(other, m.endpoint(other, snap), snap); err != nil {
 			log.Printf("orchestrator stop %s: %v", other, err)
 		}
 	}
-	if m.comfyAlive() && (!usesComfy(keep) || stoppedComfyPeer) {
-		report("结束 ComfyUI，避免旧图占显存")
-		m.stopURL(m.comfyURL())
+	m.stopForeignComfy(keep, report)
+	if sharedComfyDirty && keepComfy != "" && m.alive(keepComfy) {
+		report("结束共用 ComfyUI，清掉旧图显存")
+		m.stopURL(keepComfy)
 	}
 }
 
 func (m *Manager) Probe(base string) (ready bool, lat int64, detail string) {
+	h := m.Inspect(base)
+	return h.Ready, h.LatencyMS, h.Detail
+}
+
+func (m *Manager) Inspect(base string) models.SidecarHealth {
 	start := time.Now()
 	body, ok := m.getJSON(strings.TrimRight(base, "/") + "/health")
-	lat = time.Since(start).Milliseconds()
-	if !ok {
-		return false, lat, "离线"
-	}
-	if err, _ := body["error"].(string); err != "" {
-		return false, lat, err
-	}
-	if flag, exists := body["ready"]; exists {
-		if b, ok := flag.(bool); ok {
-			if b {
-				return true, lat, "已加载"
-			}
-			if loading, _ := body["loading"].(bool); loading {
-				return false, lat, "加载中"
-			}
-			return false, lat, "进程在，模型未就绪"
-		}
-	}
-	return true, lat, "HTTP 可达"
+	return models.ParseSidecarHealth(body, time.Since(start).Milliseconds(), ok)
 }
 
 func (m *Manager) startEngine(engine string) error {
@@ -305,8 +295,12 @@ func (m *Manager) endpoint(engine string, snap models.SettingsPayload) string {
 	switch models.CanonicalEngine(engine) {
 	case models.EngineH3Ref2VAInt8:
 		return strings.TrimRight(snap.SGLANGRef2VAURL, "/")
+	case models.EngineH3PinkCherryInt8:
+		return strings.TrimRight(snap.H3PinkCherryURL, "/")
 	case models.EngineFastH3:
 		return strings.TrimRight(snap.FastH3URL, "/")
+	case models.EngineH3Turbo:
+		return strings.TrimRight(snap.H3TurboURL, "/")
 	case models.EngineLLadaImage:
 		return strings.TrimRight(snap.LLaDAImageURL, "/")
 	default:
@@ -322,8 +316,43 @@ func (m *Manager) comfyURL() string {
 	return u
 }
 
-func (m *Manager) comfyAlive() bool {
-	return m.alive(m.comfyURL())
+func (m *Manager) pinkCherryComfyURL() string {
+	u := strings.TrimRight(m.cfg.PinkCherryComfyURL, "/")
+	if u == "" {
+		return "http://127.0.0.1:8189"
+	}
+	return u
+}
+
+func (m *Manager) comfyURLFor(engine string) string {
+	switch models.CanonicalEngine(engine) {
+	case models.EngineH3PinkCherryInt8:
+		return m.pinkCherryComfyURL()
+	case models.EngineFastH3, models.EngineH3Ref2VAInt8:
+		return m.comfyURL()
+	default:
+		return ""
+	}
+}
+
+func (m *Manager) stopForeignComfy(keep string, report func(string)) {
+	keepComfy := m.comfyURLFor(keep)
+	seen := map[string]bool{}
+	if keepComfy != "" {
+		seen[keepComfy] = true
+	}
+	for _, id := range exclusiveEngines() {
+		u := m.comfyURLFor(id)
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		if !m.alive(u) {
+			continue
+		}
+		report("结束 " + u + " 上的 ComfyUI，避免和当前引擎抢显存")
+		m.stopURL(u)
+	}
 }
 
 func waitMessage(label string, elapsed time.Duration, hint string) string {
@@ -397,7 +426,7 @@ func (m *Manager) getJSON(raw string) (map[string]any, bool) {
 		return nil, false
 	}
 	var payload map[string]any
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	if json.Unmarshal(b, &payload) != nil {
 		return map[string]any{}, resp.StatusCode < 500
 	}
@@ -425,7 +454,9 @@ func (m *Manager) postShutdown(base string) {
 func exclusiveEngines() []string {
 	return []string{
 		models.EngineH3,
+		models.EngineH3Turbo,
 		models.EngineH3Ref2VAInt8,
+		models.EngineH3PinkCherryInt8,
 		models.EngineFastH3,
 		models.EngineLLadaImage,
 	}
@@ -434,9 +465,13 @@ func exclusiveEngines() []string {
 func engineSpec(engine string) (spec, bool) {
 	switch models.CanonicalEngine(engine) {
 	case models.EngineH3Ref2VAInt8:
-		return spec{ID: models.EngineH3Ref2VAInt8, Label: "H3 Ref2VA INT8", Script: "start_h3_ref2va_int8.bat", UsesComfy: true}, true
+		return spec{ID: models.EngineH3Ref2VAInt8, Label: "H3 Ref2VA INT8", Script: "start_h3_ref2va_int8.bat", UsesComfy: true, ComfyURL: "http://127.0.0.1:8188"}, true
+	case models.EngineH3PinkCherryInt8:
+		return spec{ID: models.EngineH3PinkCherryInt8, Label: "H3 PinkCherry INT8", Script: "start_h3_pinkcherry_int8.bat", UsesComfy: true, ComfyURL: "http://127.0.0.1:8189"}, true
 	case models.EngineFastH3:
-		return spec{ID: models.EngineFastH3, Label: "FastH3", Script: "start_fasth3_gguf.bat", UsesComfy: true}, true
+		return spec{ID: models.EngineFastH3, Label: "FastH3", Script: "start_fasth3_gguf.bat", UsesComfy: true, ComfyURL: "http://127.0.0.1:8188"}, true
+	case models.EngineH3Turbo:
+		return spec{ID: models.EngineH3Turbo, Label: "H3 Turbo LoRA", Script: "start_h3_turbo_lora.bat"}, true
 	case models.EngineLLadaImage:
 		return spec{ID: models.EngineLLadaImage, Label: "LLaDA-Image", Script: "start_llada_image.bat"}, true
 	case models.EngineH3:
@@ -444,11 +479,6 @@ func engineSpec(engine string) (spec, bool) {
 	default:
 		return spec{}, false
 	}
-}
-
-func usesComfy(engine string) bool {
-	sp, ok := engineSpec(engine)
-	return ok && sp.UsesComfy
 }
 
 func findRepoRoot(explicit string) string {

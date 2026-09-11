@@ -2,6 +2,9 @@
 
 Exposes the same /v1/videos endpoints Aishow's Go worker already uses.
 Load local NF4 FL2VA weights; Ref2VA is optional if that file exists.
+
+Set H3_TURBO=1 to fold lightx2v / larry Turbo LoRA and sample in 4–6 steps
+(the Pepe104 MiniMax-H3-Turbo-Lora Space, but quantized for 24GB).
 """
 from __future__ import annotations
 
@@ -27,24 +30,45 @@ from PIL import Image
 from diffsynth.pipelines.minimax_h3_audio_video import MiniMaxH3Pipeline, ModelConfig
 from diffsynth.utils.data.audio_video import write_video_audio
 
-ROOT = Path(os.environ.get("H3_ROOT", r"E:\MiniMax-H3"))
-NF4 = Path(os.environ.get("H3_NF4_DIR", ROOT / "models" / "MiniMax-H3-NF4"))
-PROCESSOR = Path(os.environ.get("H3_PROCESSOR", ROOT / "models" / "MiniMax-H3" / "FL2VA" / "processor"))
+from aishow_paths import env_path, media_root
+
+ROOT = env_path("H3_ROOT", required=True)
+NF4 = env_path("H3_NF4_DIR", ROOT / "models" / "MiniMax-H3-NF4")
+PROCESSOR = env_path("H3_PROCESSOR", ROOT / "models" / "MiniMax-H3" / "FL2VA" / "processor")
+TURBO = os.environ.get("H3_TURBO", "0").lower() in ("1", "true", "yes", "on")
 HOST = os.environ.get("H3_HOST", "127.0.0.1")
-PORT = int(os.environ.get("H3_PORT", "30010"))
-OUT_DIR = Path(os.environ.get("H3_OUT_DIR", ROOT / "tmp" / "aishow-jobs"))
-MEDIA_ROOT = Path(os.environ.get("H3_MEDIA_ROOT", r"D:\code\aishow\backend\data\media"))
+PORT = int(os.environ.get("H3_PORT", "30012" if TURBO else "30010"))
+OUT_DIR = env_path("H3_OUT_DIR", ROOT / "tmp" / "aishow-jobs")
+MEDIA_ROOT = media_root()
+LORA_DIR = env_path("H3_LORA_DIR", ROOT / "models" / "loras")
+LORA_ALPHA = float(os.environ.get("H3_LORA_STRENGTH", "1.0"))
 
 FL2VA = NF4 / "minimax-h3-fl2va-nf4.safetensors"
 TE = NF4 / "minimax-h3-text-encoder-nf4.safetensors"
 VVAE = NF4 / "video_vae_nf4.safetensors"
 AVAE = NF4 / "audio_vae_nf4.safetensors"
+LORA_CANDIDATES = [
+    LORA_DIR / "minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors",
+    LORA_DIR / "minimax_h3_fl2v_turbo_4step_v1.1_768p_bf16.safetensors",
+    LORA_DIR / "minimax_h3_fl2v_turbo_4step_v1.0_768p_bf16.safetensors",
+    LORA_DIR / "minimax_h3_fl2v_turbo_4step_v0.1.safetensors",
+    LORA_DIR / "minimax_h3_turbo_4step_ema_ckpt850.safetensors",
+]
 
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 INFER_Q: queue.Queue[str] = queue.Queue()
 PIPE = None
-MAX_SHORT = int(os.environ.get("H3_MAX_SHORT_EDGE", "1080"))
+LORA_FILE = ""
+MAX_SHORT = int(os.environ.get("H3_MAX_SHORT_EDGE", "768" if TURBO else "1080"))
+TEXT_ENCODER = TE.name
+TEXT_ENCODER_LABEL = "Qwen3-VL 32B NF4"
+MODEL_NAME = "MiniMax-H3-Turbo-LoRA" if TURBO else "MiniMax-H3-NF4"
+LOG_TAG = "h3-turbo" if TURBO else "h3-nf4"
+
+
+def text_encoder_payload() -> dict:
+    return {"text_encoder": TEXT_ENCODER, "text_encoder_label": TEXT_ENCODER_LABEL}
 
 
 class JobCancelled(Exception):
@@ -129,17 +153,35 @@ def vram_config() -> dict:
     }
 
 
+def resolve_lora() -> Path:
+    forced = os.environ.get("H3_TURBO_LORA", "").strip()
+    if forced:
+        p = Path(forced)
+        if not p.exists():
+            raise FileNotFoundError(f"指定的 Turbo LoRA 不存在: {p}")
+        return p
+    for cand in LORA_CANDIDATES:
+        if cand.exists() and cand.stat().st_size > 10 * 1024 * 1024:
+            return cand
+    raise FileNotFoundError(
+        "缺少 Turbo LoRA。请先跑 scripts\\download_h3_turbo_lora.ps1，"
+        "或把 lightx2v 的 minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors "
+        f"放到 {LORA_DIR}"
+    )
+
+
 def load_pipe():
-    global PIPE
+    global PIPE, LORA_FILE
     missing = [p for p in (FL2VA, TE, VVAE, AVAE, PROCESSOR) if not Path(p).exists()]
     if missing:
         raise FileNotFoundError("缺少 NF4 文件: " + ", ".join(str(p) for p in missing))
+    lora_path = resolve_lora() if TURBO else None
     cfg = vram_config()
     vram_limit = torch.cuda.mem_get_info("cuda")[1] / (1024 ** 3) - 2
-    print(f"[h3-nf4] loading FL2VA, vram_limit={vram_limit:.1f} GB", flush=True)
-    print(f"[h3-nf4] dit={FL2VA}", flush=True)
-    print(f"[h3-nf4] te={TE}", flush=True)
-    print(f"[h3-nf4] processor={PROCESSOR}", flush=True)
+    print(f"[{LOG_TAG}] loading FL2VA, vram_limit={vram_limit:.1f} GB", flush=True)
+    print(f"[{LOG_TAG}] dit={FL2VA}", flush=True)
+    print(f"[{LOG_TAG}] te={TE} ({TEXT_ENCODER_LABEL})", flush=True)
+    print(f"[{LOG_TAG}] processor={PROCESSOR}", flush=True)
     PIPE = MiniMaxH3Pipeline.from_pretrained(
         torch_dtype=torch.bfloat16,
         device="cuda",
@@ -152,7 +194,11 @@ def load_pipe():
         processor_config=ModelConfig(path=str(PROCESSOR)),
         vram_limit=vram_limit,
     )
-    print("[h3-nf4] ready", flush=True)
+    if lora_path is not None:
+        print(f"[{LOG_TAG}] lora={lora_path} alpha={LORA_ALPHA}", flush=True)
+        PIPE.load_lora(PIPE.dit, str(lora_path), alpha=LORA_ALPHA)
+        LORA_FILE = lora_path.name
+    print(f"[{LOG_TAG}] ready", flush=True)
 
 
 class Bar:
@@ -190,7 +236,9 @@ def run_job(job_id: str):
         height, width = canvas(target.get("aspect_ratio"), short)
         frames = align_frames(int(round(seconds * 24)))
         prompt = req.get("prompt") or ""
-        steps = int(req.get("num_inference_steps") or 50)
+        steps = int(req.get("num_inference_steps") or (4 if TURBO else 50))
+        if TURBO:
+            steps = max(4, min(steps, 8))
         seed = int(req.get("seed") or 0)
         kwargs = {
             "prompt": prompt,
@@ -199,7 +247,7 @@ def run_job(job_id: str):
             "num_frames": frames,
             "num_inference_steps": steps,
             "seed": seed,
-            "flow_shift": float(req.get("flow_shift") or 12),
+            "flow_shift": float(req.get("flow_shift") or (6 if TURBO else 12)),
             "audio_flow_shift": float(req.get("audio_flow_shift") or 3),
             "progress_bar_cmd": Bar(job),
         }
@@ -219,7 +267,7 @@ def run_job(job_id: str):
             raise JobCancelled("已取消")
         job["status"] = "in_progress"
         job["progress"] = 20
-        print(f"[h3-nf4] infer {job_id} {height}x{width} frames={frames} steps={steps}", flush=True)
+        print(f"[{LOG_TAG}] infer {job_id} {height}x{width} frames={frames} steps={steps}", flush=True)
         video, audio = PIPE(**kwargs)
         OUT_DIR.mkdir(parents=True, exist_ok=True)
         dest = OUT_DIR / f"{job_id}.mp4"
@@ -230,7 +278,7 @@ def run_job(job_id: str):
     except JobCancelled:
         job["status"] = "cancelled"
         job["error"] = {"message": "已取消"}
-        print(f"[h3-nf4] cancelled {job_id}", flush=True)
+        print(f"[{LOG_TAG}] cancelled {job_id}", flush=True)
         try:
             torch.cuda.empty_cache()
         except Exception:
@@ -244,7 +292,7 @@ def run_job(job_id: str):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
-        print("[h3-nf4]", fmt % args)
+        print(f"[{LOG_TAG}]", fmt % args)
 
     def _json(self, code, payload):
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -260,11 +308,13 @@ class Handler(BaseHTTPRequestHandler):
             current = next((j for j in JOBS.values() if j.get("status") == "in_progress"), None)
             self._json(200, {
                 "ok": True,
-                "model": "MiniMax-H3-NF4",
+                "model": MODEL_NAME,
                 "ready": PIPE is not None,
                 "busy": current is not None,
                 "progress": (current or {}).get("progress", 0),
                 "elapsed_sec": int(time.time() - current["t0"]) if current and current.get("t0") else 0,
+                "lora": LORA_FILE,
+                **text_encoder_payload(),
             })
             return
         m = re.fullmatch(r"/v1/videos/([^/]+)/content", path)
@@ -292,6 +342,7 @@ class Handler(BaseHTTPRequestHandler):
                 "progress": job.get("progress", 0),
                 "error": job.get("error"),
                 "elapsed_sec": int(time.time() - job["t0"]) if job.get("t0") else 0,
+                **text_encoder_payload(),
             })
             return
         self._json(404, {"error": "not found"})
@@ -324,7 +375,7 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             JOBS[job_id] = job
         INFER_Q.put(job_id)
-        self._json(200, {"id": job_id, "status": "queued"})
+        self._json(200, {"id": job_id, "status": "queued", **text_encoder_payload()})
 
 
 def main():
@@ -333,8 +384,8 @@ def main():
     load_pipe()
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True, name="h3-http").start()
-    print(f"[h3-nf4] listening on http://{HOST}:{PORT}", flush=True)
-    print("[h3-nf4] inference runs on the main thread (Windows safetensors)", flush=True)
+    print(f"[{LOG_TAG}] listening on http://{HOST}:{PORT}", flush=True)
+    print(f"[{LOG_TAG}] inference runs on the main thread (Windows safetensors)", flush=True)
     while True:
         job_id = INFER_Q.get()
         run_job(job_id)

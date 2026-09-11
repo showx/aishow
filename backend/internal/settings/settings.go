@@ -21,6 +21,8 @@ const (
 	KeyMiniMaxBase       = "minimax_api_base"
 	KeyMiniMaxToken      = "minimax_api_token"
 	KeyFastH3            = "fasth3_url"
+	KeyH3Turbo           = "h3_turbo_url"
+	KeyH3PinkCherry      = "h3_pinkcherry_url"
 	KeyLLaDAImage        = "llada_image_url"
 	KeyAutoSwitchEngine  = "auto_switch_engine"
 	KeyMaxLoadedEngines  = "max_loaded_engines"
@@ -39,6 +41,8 @@ func Seed(db *gorm.DB, cfg config.Config) error {
 		KeyMiniMaxBase:       cfg.MiniMaxAPIBase,
 		KeyMiniMaxToken:      cfg.MiniMaxAPIToken,
 		KeyFastH3:            cfg.FastH3URL,
+		KeyH3Turbo:           cfg.H3TurboURL,
+		KeyH3PinkCherry:      cfg.H3PinkCherryURL,
 		KeyLLaDAImage:        cfg.LLaDAImageURL,
 		KeyAutoSwitchEngine:  boolString(cfg.AutoSwitchEngine),
 		KeyMaxLoadedEngines:  strconv.Itoa(max1(cfg.MaxLoadedEngines)),
@@ -86,6 +90,8 @@ func Snapshot(db *gorm.DB, cfg config.Config) models.SettingsPayload {
 		MiniMaxAPIToken:   masked,
 		HasMiniMaxToken:   token != "",
 		FastH3URL:         Get(db, KeyFastH3, cfg.FastH3URL),
+		H3TurboURL:        Get(db, KeyH3Turbo, cfg.H3TurboURL),
+		H3PinkCherryURL:   Get(db, KeyH3PinkCherry, cfg.H3PinkCherryURL),
 		LLaDAImageURL:     Get(db, KeyLLaDAImage, cfg.LLaDAImageURL),
 		AutoSwitchEngine:  boolPtr(parseBool(Get(db, KeyAutoSwitchEngine, boolString(cfg.AutoSwitchEngine)), cfg.AutoSwitchEngine)),
 		MaxLoadedEngines:  intPtr(max1(atoi(Get(db, KeyMaxLoadedEngines, strconv.Itoa(max1(cfg.MaxLoadedEngines)))))),
@@ -103,6 +109,8 @@ func Apply(db *gorm.DB, in models.SettingsPayload) error {
 		KeyPublicBase:        strings.TrimRight(strings.TrimSpace(in.PublicBaseURL), "/"),
 		KeyMiniMaxBase:       strings.TrimRight(strings.TrimSpace(in.MiniMaxAPIBase), "/"),
 		KeyFastH3:            strings.TrimRight(strings.TrimSpace(in.FastH3URL), "/"),
+		KeyH3Turbo:           strings.TrimRight(strings.TrimSpace(in.H3TurboURL), "/"),
+		KeyH3PinkCherry:      strings.TrimRight(strings.TrimSpace(in.H3PinkCherryURL), "/"),
 		KeyLLaDAImage:        strings.TrimRight(strings.TrimSpace(in.LLaDAImageURL), "/"),
 	}
 	for k, v := range pairs {

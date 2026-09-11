@@ -1,6 +1,9 @@
 # runtime
 backend/data/
 backend/.env
+scripts/paths.bat
+scripts/paths.env
+scripts/*.local.yaml
 *.db
 *.db-wal
 *.db-shm

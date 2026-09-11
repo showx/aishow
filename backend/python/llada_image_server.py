@@ -22,14 +22,16 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
-import torch
-from PIL import Image
+from aishow_paths import env_path, media_root
 
-REPO = Path(os.environ.get("LLADA_REPO", r"F:\LLaDA-Image"))
-PYDEPS = Path(os.environ.get("LLADA_PYDEPS", REPO / "pydeps"))
+REPO = env_path("LLADA_REPO", required=True)
+PYDEPS = env_path("LLADA_PYDEPS", REPO / "pydeps")
 for p in (str(PYDEPS), str(REPO)):
     if p and p not in sys.path:
         sys.path.insert(0, p)
+
+import torch  # noqa: E402
+from PIL import Image  # noqa: E402
 
 
 def _patch_transformers_rope() -> None:
@@ -62,8 +64,8 @@ from src import LLaDAImagePipeline  # noqa: E402
 HOST = os.environ.get("LLADA_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LLADA_PORT", "30020"))
 MODEL = os.environ.get("LLADA_MODEL", "inclusionAI/LLaDA-Image-Turbo")
-OUT_DIR = Path(os.environ.get("LLADA_OUT_DIR", REPO / "tmp" / "aishow-jobs"))
-MEDIA_ROOT = Path(os.environ.get("LLADA_MEDIA_ROOT", r"D:\code\aishow\backend\data\media"))
+OUT_DIR = env_path("LLADA_OUT_DIR", REPO / "tmp" / "aishow-jobs")
+MEDIA_ROOT = media_root()
 MAX_SHORT = int(os.environ.get("LLADA_MAX_SHORT_EDGE", "1536"))
 DTYPE = os.environ.get("LLADA_DTYPE", "bfloat16")
 
@@ -74,6 +76,12 @@ PIPE = None
 LOAD_T0 = 0.0
 LOAD_ERROR = ""
 VARIANT = "turbo" if "turbo" in MODEL.lower() else "base"
+
+
+def text_encoder_payload() -> dict:
+    name = Path(MODEL).name if MODEL else "LLaDA-Image"
+    label = "LLaDA-Image 6B Turbo" if VARIANT == "turbo" else "LLaDA-Image 6B"
+    return {"text_encoder": name, "text_encoder_label": label}
 
 
 class JobCancelled(Exception):
@@ -294,6 +302,7 @@ class Handler(BaseHTTPRequestHandler):
                 "progress": (current or {}).get("progress", 0),
                 "elapsed_sec": elapsed,
                 "error": LOAD_ERROR or None,
+                **text_encoder_payload(),
             })
             return
         m = re.fullmatch(r"/v1/images/([^/]+)/content", path)
@@ -320,6 +329,7 @@ class Handler(BaseHTTPRequestHandler):
                 "status": job["status"],
                 "progress": job.get("progress", 0),
                 "error": job.get("error"),
+                **text_encoder_payload(),
             })
             return
         self._json(404, {"error": "not found"})
@@ -355,7 +365,7 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             JOBS[job_id] = job
         INFER_Q.put(job_id)
-        self._json(200, {"id": job_id, "status": "queued"})
+        self._json(200, {"id": job_id, "status": "queued", **text_encoder_payload()})
 
 
 def main():

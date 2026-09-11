@@ -1,9 +1,12 @@
-# Multi-connection FastH3 download via Clash + aria2.
+# Multi-connection FastH3 download via aria2 (or curl fallback).
+. "$PSScriptRoot\_env.ps1"
 $ErrorActionPreference = "Continue"
-$Aria = "F:\tools\aria2\aria2-1.37.0-win-64bit-build1\aria2c.exe"
-$Curl = "C:\Windows\System32\curl.exe"
-$Proxy = "http://127.0.0.1:7897"
-$Root = "F:\models\FastVideo-Minimax-FastH3-Preview-v0.2"
+$Root = Get-AishowEnv "FASTH3_LOCAL_DIR"
+if (-not $Root) {
+    $models = Require-AishowEnv "MODELS_ROOT"
+    $Root = Join-Path $models "FastVideo-Minimax-FastH3-Preview-v0.2"
+}
+if (-not $Aria) { $Aria = "aria2c" }
 $Repo = "FastVideo/FastVideo-Minimax-FastH3-Preview-v0.2"
 $Base = "https://huggingface.co/$Repo/resolve/main"
 $Api = "https://huggingface.co/api/models/$Repo/tree/main"
@@ -12,7 +15,7 @@ Remove-Item env:HTTP_PROXY, env:HTTPS_PROXY, env:ALL_PROXY, env:http_proxy, env:
 function Get-Tree([string]$Sub) {
     $url = if ($Sub) { "$Api/$Sub" } else { $Api }
     $tmp = Join-Path $env:TEMP ("fasth3-tree-{0}.json" -f ($Sub -replace '[\\/]', '-'))
-    & $Curl -sL --fail --max-time 45 -x $Proxy $url -o $tmp | Out-Null
+    & $Curl -sL --fail --max-time 45 @(Get-CurlProxyArgs) $url -o $tmp | Out-Null
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tmp)) { return @() }
     $items = @(Get-Content $tmp -Raw | ConvertFrom-Json)
     foreach ($it in $items) {
@@ -59,14 +62,18 @@ foreach ($item in $todo) {
     Write-Host ("==== {0} ({1:N1}/{2:N1} MB) ====" -f $item.Rel, ($item.Have/1MB), ($item.Size/1MB))
     $url = "$Base/$($item.Rel)"
     if ($item.Rel -notmatch "\.safetensors$" -or ($item.Size -gt 0 -and $item.Size -lt 50MB)) {
-        & $Curl -L --fail --retry 8 --retry-delay 2 --http1.1 -x $Proxy -o $item.Dest $url
+        & $Curl -L --fail --retry 8 --retry-delay 2 --http1.1 @(Get-CurlProxyArgs) -o $item.Dest $url
     } else {
-        & $Aria --console-log-level=notice --summary-interval=8 `
-            --max-connection-per-server=16 --split=16 --min-split-size=4M `
-            --continue=true --auto-file-renaming=false --allow-overwrite=false `
-            --file-allocation=none --max-tries=0 --retry-wait=2 `
-            --connect-timeout=20 --timeout=120 `
-            --all-proxy=$Proxy --dir=$dir --out=$name $url
+        $ariaArgs = @(
+            "--console-log-level=notice", "--summary-interval=8",
+            "--max-connection-per-server=16", "--split=16", "--min-split-size=4M",
+            "--continue=true", "--auto-file-renaming=false", "--allow-overwrite=false",
+            "--file-allocation=none", "--max-tries=0", "--retry-wait=2",
+            "--connect-timeout=20", "--timeout=120",
+            "--dir=$dir", "--out=$name", $url
+        )
+        if ($Proxy) { $ariaArgs = @("--all-proxy=$Proxy") + $ariaArgs }
+        & $Aria @ariaArgs
     }
     $now = if (Test-Path $item.Dest) { (Get-Item $item.Dest).Length } else { 0 }
     if ($item.Size -gt 0 -and $now -eq $item.Size) {

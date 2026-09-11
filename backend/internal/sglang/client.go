@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"aishow/internal/models"
 )
 
 type Client struct {
@@ -55,8 +57,10 @@ type Target struct {
 }
 
 type CreateResponse struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+	ID               string `json:"id"`
+	Status           string `json:"status"`
+	TextEncoder      string `json:"text_encoder"`
+	TextEncoderLabel string `json:"text_encoder_label"`
 }
 
 type StatusResponse struct {
@@ -75,31 +79,59 @@ func New() *Client {
 	}
 }
 
-func (c *Client) Health(base string) (bool, int64, string) {
+func (c *Client) Inspect(base string) models.SidecarHealth {
 	base = strings.TrimRight(base, "/")
 	start := time.Now()
-	urls := []string{base + "/health", base + "/v1/models", base + "/"}
-	var last string
-	for _, u := range urls {
-		req, err := http.NewRequest(http.MethodGet, u, nil)
-		if err != nil {
-			last = err.Error()
-			continue
-		}
-		resp, err := c.http.Do(req)
-		if err != nil {
-			last = err.Error()
-			continue
-		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		lat := time.Since(start).Milliseconds()
-		if resp.StatusCode >= 200 && resp.StatusCode < 500 {
-			return true, lat, fmt.Sprintf("HTTP %d", resp.StatusCode)
-		}
-		last = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	req, err := http.NewRequest(http.MethodGet, base+"/health", nil)
+	if err != nil {
+		return models.ParseSidecarHealth(nil, time.Since(start).Milliseconds(), false)
 	}
-	return false, time.Since(start).Milliseconds(), last
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return models.ParseSidecarHealth(nil, time.Since(start).Milliseconds(), false)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	lat := time.Since(start).Milliseconds()
+	if resp.StatusCode >= 500 {
+		return models.ParseSidecarHealth(nil, lat, false)
+	}
+	var payload map[string]any
+	if json.Unmarshal(b, &payload) != nil {
+		payload = map[string]any{}
+	}
+	return models.ParseSidecarHealth(payload, lat, true)
+}
+
+func (c *Client) Health(base string) (bool, int64, string) {
+	h := c.Inspect(base)
+	if h.Detail == "离线" {
+		base = strings.TrimRight(base, "/")
+		start := time.Now()
+		urls := []string{base + "/v1/models", base + "/"}
+		var last string
+		for _, u := range urls {
+			req, err := http.NewRequest(http.MethodGet, u, nil)
+			if err != nil {
+				last = err.Error()
+				continue
+			}
+			resp, err := c.http.Do(req)
+			if err != nil {
+				last = err.Error()
+				continue
+			}
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			lat := time.Since(start).Milliseconds()
+			if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+				return true, lat, fmt.Sprintf("HTTP %d", resp.StatusCode)
+			}
+			last = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return false, time.Since(start).Milliseconds(), last
+	}
+	return h.Ready, h.LatencyMS, h.Detail
 }
 
 func (c *Client) Create(base string, body VideoRequest) (*CreateResponse, error) {

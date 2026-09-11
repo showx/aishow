@@ -25,6 +25,8 @@
           <h3>{{ job.title }}</h3>
           <p>{{ job.prompt }}</p>
           <div class="card-ops" @click.stop>
+            <button class="btn" type="button" title="把参数填回工坊，改完再生成" @click="reuse(job)">填回</button>
+            <button class="btn" type="button" :disabled="isRegenerating(job.id)" title="按相同参数新建任务，并换新 Seed" @click="regenerate(job)">{{ isRegenerating(job.id) ? '排队中…' : '再生成' }}</button>
             <button class="btn btn-danger" type="button" @click="askDelete(job)">删除</button>
           </div>
         </div>
@@ -90,6 +92,8 @@
 
           <div class="ops">
             <button class="btn" type="button" @click="reuse(active)">填回工坊</button>
+            <button v-if="showEnhanced" class="btn" type="button" @click="reuseEnhanced(active)">用增强提示填回</button>
+            <button class="btn" type="button" :disabled="isRegenerating(active.id)" title="按相同参数新建任务，并换新 Seed" @click="regenerate(active)">{{ isRegenerating(active.id) ? '排队中…' : '再生成' }}</button>
             <a v-if="active.has_image" class="btn btn-primary" :href="`/api/v1/jobs/${active.id}/image`" download>下载图片</a>
             <a v-else-if="active.has_video" class="btn btn-primary" :href="`/api/v1/jobs/${active.id}/video`" download>下载成片</a>
             <button class="btn btn-danger" type="button" @click="askDelete(active)">删除</button>
@@ -104,13 +108,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import JobDeleteModal from '../components/JobDeleteModal.vue'
+import { useJobReuse } from '../composables/useJobReuse'
 import { useAppStore } from '../stores/app'
 import {
   api,
   canvasSize,
   engineName,
+  fallbackTextEncoder,
   isImageJob,
   modeLabel,
   resolutionLabel,
@@ -120,7 +125,7 @@ import {
 } from '../api/http'
 
 const store = useAppStore()
-const router = useRouter()
+const { reuseInStudio, regenerate, isRegenerating } = useJobReuse()
 const filter = ref('')
 const active = ref<Job | null>(null)
 const pending = ref<Job | null>(null)
@@ -192,7 +197,13 @@ function paramRows(job: Job) {
       { k: 'Audio Flow', v: String(job.audio_flow_shift) },
     )
   }
-  if (!image) rows.push({ k: '提示增强', v: job.enhance_prompt ? '开启' : '关闭' })
+  rows.push({ k: '文字理解', v: job.text_encoder_label || fallbackTextEncoder(job.engine) })
+  if (job.text_encoder && job.text_encoder !== job.text_encoder_label) {
+    rows.push({ k: '编码器文件', v: job.text_encoder })
+  }
+  if (!image) {
+    rows.push({ k: '提示改写', v: job.prompt_rewriter || (job.enhance_prompt ? 'H3-Context-IR' : '关闭') })
+  }
   rows.push(
     { k: '优先级', v: String(job.priority) },
     { k: '成品体积', v: sizeBytes(job.output_size) },
@@ -246,7 +257,11 @@ async function copy(text: string) {
 }
 
 function reuse(job: Job) {
-  router.push({ name: 'studio', query: { reuse: job.id } })
+  reuseInStudio(job.id)
+}
+
+function reuseEnhanced(job: Job) {
+  reuseInStudio(job.id, { enhanced: true })
 }
 
 function askDelete(job: Job) {
@@ -319,7 +334,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   overflow-wrap: anywhere;
 }
-.card-ops { display: flex; justify-content: flex-end; margin-top: 12px; }
+.card-ops { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .empty { padding: 40px; color: var(--muted); text-align: center; }
 .lightbox {
   position: fixed; inset: 0; z-index: 30;
@@ -364,7 +379,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
 }
 .kvs {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
+  grid-template-columns: 108px minmax(0, 1fr);
   gap: 8px 12px;
   margin: 0;
   font-size: 13px;

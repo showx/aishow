@@ -19,14 +19,17 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from aishow_paths import env_path, path_list, sidecar_out
+
 HOST = os.environ.get("FASTH3_HOST", "127.0.0.1")
 PORT = int(os.environ.get("FASTH3_PORT", "8000"))
 COMFY = os.environ.get("FASTH3_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
-OUT_DIR = Path(os.environ.get("FASTH3_OUT_DIR", r"F:\models\aishow-fasth3-out"))
-COMFY_OUTPUT = Path(os.environ.get(
+OUT_DIR = env_path("FASTH3_OUT_DIR", sidecar_out("fasth3"))
+_comfy_root = env_path("COMFY_ROOT")
+COMFY_OUTPUT = env_path(
     "FASTH3_COMFY_OUTPUT",
-    r"E:\MiniMax-H3\ComfyUI_windows_portable\ComfyUI\output",
-))
+    (_comfy_root / "ComfyUI" / "output") if _comfy_root != Path() else sidecar_out("fasth3-comfy"),
+)
 
 UNET = os.environ.get("FASTH3_GGUF_UNET", "FastH3-comfy-Q4_K_M.gguf")
 VIDEO_VAE = os.environ.get("FASTH3_VIDEO_VAE", "minimax_h3_video_vae_fp16.safetensors")
@@ -34,10 +37,11 @@ AUDIO_VAE = os.environ.get("FASTH3_AUDIO_VAE", "minimax_h3_audio_vae_fp32.safete
 TOPK = float(os.environ.get("FASTH3_VSA_TOPK", "0.10"))
 SHIFT_VIDEO = float(os.environ.get("FASTH3_SHIFT_VIDEO", "12"))
 SHIFT_AUDIO = float(os.environ.get("FASTH3_SHIFT_AUDIO", "3"))
-CLIP_DIRS = [
-    Path(r"E:\MiniMax-H3\ComfyUI_windows_portable\ComfyUI\models\text_encoders"),
-    Path(r"F:\models\fasth3-gguf\text_encoders"),
-]
+_gguf = env_path("FASTH3_GGUF_ROOT")
+CLIP_DIRS = path_list("FASTH3_CLIP_DIRS", [
+    _comfy_root / "ComfyUI" / "models" / "text_encoders" if _comfy_root != Path() else Path(),
+    _gguf / "text_encoders" if _gguf != Path() else Path(),
+])
 # Unsloth llama.cpp GGUF has no architecture tag; ComfyUI-GGUF rejects it.
 # Prefer Comfy-Org quantized safetensors that CLIPLoader already sees.
 CLIP_CANDIDATES = [
@@ -67,6 +71,23 @@ CLIP, CLIP_LOADER = resolve_clip()
 JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 INFER_Q: queue.Queue[str] = queue.Queue()
+
+
+def text_encoder_label(name: str) -> str:
+    low = (name or "").lower()
+    if "nvfp4" in low:
+        return "Qwen3-VL 32B NVFP4"
+    if "int8" in low:
+        return "Qwen3-VL 32B INT8"
+    if "nf4" in low:
+        return "Qwen3-VL 32B NF4"
+    if "qwen3" in low:
+        return "Qwen3-VL 32B"
+    return "Qwen3-VL 32B 量化"
+
+
+def text_encoder_payload() -> dict:
+    return {"text_encoder": CLIP, "text_encoder_label": text_encoder_label(CLIP)}
 
 
 class JobCancelled(Exception):
@@ -396,6 +417,7 @@ class Handler(BaseHTTPRequestHandler):
                 "busy": current is not None,
                 "progress": (current or {}).get("progress", 0),
                 "comfy": COMFY,
+                **text_encoder_payload(),
             })
             return
         m = re.fullmatch(r"/v1/videos/([^/]+)/content", path)
@@ -422,6 +444,7 @@ class Handler(BaseHTTPRequestHandler):
                 "status": job["status"],
                 "progress": job.get("progress", 0),
                 "error": job.get("error"),
+                **text_encoder_payload(),
             })
             return
         self._json(404, {"error": "not found"})
@@ -450,7 +473,7 @@ class Handler(BaseHTTPRequestHandler):
         with LOCK:
             JOBS[job_id] = job
         INFER_Q.put(job_id)
-        self._json(200, {"id": job_id, "object": "video", "status": "queued"})
+        self._json(200, {"id": job_id, "object": "video", "status": "queued", **text_encoder_payload()})
 
     def do_DELETE(self):
         path = self.path.split("?", 1)[0]
@@ -468,7 +491,7 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     ready = comfy_ready()
     print(f"[fasth3-gguf] comfy={COMFY} ready={ready}", flush=True)
-    print(f"[fasth3-gguf] unet={UNET} clip={CLIP_LOADER}:{CLIP}", flush=True)
+    print(f"[fasth3-gguf] unet={UNET} clip={CLIP_LOADER}:{CLIP} ({text_encoder_label(CLIP)})", flush=True)
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True, name="fasth3-gguf-http").start()
     print(f"[fasth3-gguf] listening on http://{HOST}:{PORT}", flush=True)
