@@ -13,6 +13,10 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 
+# docs tooling
+docs/node_modules/
+docs/package-lock.json
+
 # go
 backend/tmp/
 *.exe
