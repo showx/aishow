@@ -23,6 +23,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+_here = Path(__file__).resolve().parent
+if str(_here) not in sys.path:
+    sys.path.insert(0, str(_here))
+
 from aishow_paths import env_path, media_root
 
 REPO = env_path("LLADA_REPO", required=True)
@@ -181,8 +185,6 @@ def load_pipe():
         size = sum(p.stat().st_size for p in local.rglob("*") if p.is_file())
         print(f"[llada-image] local weights {size / 1024**3:.1f} GB，首次读盘上 GPU 要几分钟", flush=True)
     kwargs = {"torch_dtype": dtype, "device": "cuda"}
-    if local.exists():
-        kwargs["local_files_only"] = True
     attempts = 4
     last_err = ""
     for i in range(attempts):
@@ -192,7 +194,7 @@ def load_pipe():
             try:
                 PIPE = LLaDAImagePipeline.from_pretrained(MODEL, **kwargs)
             except TypeError:
-                PIPE = LLaDAImagePipeline.from_pretrained(MODEL, torch_dtype=dtype, local_files_only=local.exists())
+                PIPE = LLaDAImagePipeline.from_pretrained(MODEL, torch_dtype=dtype)
                 PIPE = PIPE.to("cuda")
             LOAD_HINT = ""
             print("[llada-image] ready", flush=True)

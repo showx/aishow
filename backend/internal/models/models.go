@@ -51,9 +51,10 @@ const (
 	DramaKindVideo   = "video"
 	DramaKindCompile = "compile"
 
-	DramaMaxShots     = 8
-	DramaMaxBeats     = 8
-	DramaMaxImageRefs = 16
+	DramaMaxShots          = 8
+	DramaMaxBeats          = 8
+	DramaMaxImageRefs      = 16
+	DramaMaxVideoImageRefs = 9
 )
 
 type User struct {

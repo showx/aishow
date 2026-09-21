@@ -272,7 +272,7 @@ func RequireImages(shots []models.DramaShotView) error {
 		}
 	}
 	if len(pending) > 0 {
-		return fmt.Errorf("还有 %d 镜未出完图，全部完成后再进入成片", len(pending))
+		return fmt.Errorf("还有 %d 镜未出完图", len(pending))
 	}
 	return nil
 }
@@ -301,10 +301,7 @@ func RequireStep(step, script string, shots []models.DramaShot, views []models.D
 		if err := RequireScript(script); err != nil {
 			return err
 		}
-		if err := RequireStoryboard(shots); err != nil {
-			return err
-		}
-		return RequireImages(views)
+		return RequireStoryboard(shots)
 	case models.DramaStepCompile:
 		if err := RequireScript(script); err != nil {
 			return err

@@ -67,7 +67,7 @@ powershell -ExecutionPolicy Bypass -File scripts\download_h3_latent_upscaler.ps1
 scripts\start_h3_director.bat
 ```
 
-启动脚本会把插件克隆进 `ComfyUI/custom_nodes`。没有 Upscaler 也能跑，只是不会开二采。文生和参考生成都能走这套图；超过 15 秒自动分段续写，最长 30 秒。和 FastH3 / Ref2VA 共用 ComfyUI `8188`。
+启动脚本会把插件克隆进 `ComfyUI/custom_nodes`，并补一层 `_encode_ref_audio` 兼容（本机便携版把这个函数放在类上，插件按 ComfyUI master 当模块级函数调用）。没有 Upscaler 也能跑，只是不会开二采。文生和参考生成都能走这套图；超过 15 秒自动分段续写，最长 30 秒。和 FastH3 / Ref2VA 共用 ComfyUI `8188`。新装插件或兼容补丁后必须重启 8188。
 
 ## 不要混用的两套 ComfyUI
 

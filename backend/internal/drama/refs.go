@@ -75,6 +75,51 @@ func MergeImageRefs(p *models.DramaProject, shot models.DramaShot, prev *models.
 	return out
 }
 
+func VideoImageRefs(p *models.DramaProject, shot models.DramaShot, prev *models.DramaShot) []models.DramaImageRef {
+	var out []models.DramaImageRef
+	add := func(list []models.DramaImageRef) {
+		out = CleanImageRefs(append(out, list...))
+	}
+	if id := strings.TrimSpace(shot.ImageUploadID); id != "" {
+		add([]models.DramaImageRef{{UploadID: id}})
+	}
+	add(shot.ImageRefs)
+	if p != nil {
+		add(ParseImageRefs(p.ImageRefsJSON))
+	}
+	if prev != nil && !shot.SkipPrevImages && strings.TrimSpace(prev.ImageUploadID) != "" {
+		add([]models.DramaImageRef{{
+			UploadID: prev.ImageUploadID,
+			Name:     "上一镜人物",
+			Kind:     "character",
+		}})
+	}
+	if len(out) > models.DramaMaxVideoImageRefs {
+		return out[:models.DramaMaxVideoImageRefs]
+	}
+	return out
+}
+
+func VideoImageConditions(p *models.DramaProject, shot models.DramaShot, prev *models.DramaShot) []models.AssetCondition {
+	refs := VideoImageRefs(p, shot, prev)
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]models.AssetCondition, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, models.AssetCondition{UploadID: r.UploadID, Role: "reference", Type: "image"})
+	}
+	return out
+}
+
+func FormatVideoImageNote(refs []models.DramaImageRef) string {
+	note := FormatImageRefs(refs)
+	if note == "" {
+		return ""
+	}
+	return note + "\n人物与场景必须与参考图保持一致。"
+}
+
 func FirstImageRefID(refs []models.DramaImageRef) string {
 	for _, r := range refs {
 		if strings.TrimSpace(r.UploadID) != "" {

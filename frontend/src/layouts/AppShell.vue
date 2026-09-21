@@ -100,7 +100,7 @@ let es: EventSource | null = null
 const map: Record<string, { title: string; kicker: string }> = {
   dashboard: { title: '指挥台', kicker: 'Command' },
   studio: { title: '生成工坊', kicker: '离线也能排队' },
-  drama: { title: '短剧工坊', kicker: '剧本到成片' },
+  drama: { title: '短剧工坊', kicker: '漫剧制作台' },
   queue: { title: '任务队列', kicker: 'Queue' },
   gallery: { title: '作品库', kicker: 'Gallery' },
   nodes: { title: '推理节点', kicker: 'Nodes' },

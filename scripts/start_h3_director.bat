@@ -56,6 +56,18 @@ if not exist "%PLUGIN_DIR%\__init__.py" (
   set "PLUGIN_JUST_CLONED=1"
 )
 
+set "COMPAT_SRC=%AISHOW_ROOT%\scripts\comfy_h3_compat"
+set "COMPAT_DIR=%COMFY_ROOT%\ComfyUI\custom_nodes\aishow_h3_compat"
+if exist "%COMPAT_SRC%\__init__.py" (
+  if not exist "%COMPAT_DIR%\__init__.py" set "COMPAT_JUST_INSTALLED=1"
+  if not exist "%COMPAT_DIR%" mkdir "%COMPAT_DIR%"
+  copy /Y "%COMPAT_SRC%\__init__.py" "%COMPAT_DIR%\__init__.py" >nul
+)
+if exist "%PLUGIN_DIR%\minimax_h3_timeline_director.py" (
+  "%COMFY_PY%" "%AISHOW_ROOT%\scripts\patch_h3_encode_ref_audio.py" "%PLUGIN_DIR%"
+  if errorlevel 1 echo TimelineDirector 音频编码兼容补丁失败，参考音频可能仍会报 _encode_ref_audio。
+)
+
 set "UPSCALE_DIR=%COMFY_ROOT%\ComfyUI\models\latent_upscale_models"
 set "HAS_UPSCALER="
 if exist "%UPSCALE_DIR%\minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors" set "HAS_UPSCALER=1"
@@ -69,6 +81,9 @@ curl.exe -s -o nul -m 3 http://127.0.0.1:8188/system_stats
 if errorlevel 1 goto start_comfy
 if defined PLUGIN_JUST_CLONED (
   echo 插件刚装上，但 ComfyUI 已经在跑。请关掉 8188 窗口后重新执行本脚本，否则找不到 Timeline Director 节点。
+)
+if defined COMPAT_JUST_INSTALLED (
+  echo 已装 H3 _encode_ref_audio 兼容补丁，但 ComfyUI 已经在跑。请关掉 8188 窗口后重新执行本脚本。
 )
 goto comfy_ok
 

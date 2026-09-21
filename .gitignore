@@ -17,6 +17,11 @@ frontend/.env
 docs/node_modules/
 docs/package-lock.json
 
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # go
 backend/tmp/
 *.exe

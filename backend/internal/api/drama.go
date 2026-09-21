@@ -714,6 +714,11 @@ func (s *Server) startDramaShotVideo(p *models.DramaProject, shots []models.Dram
 		}
 	}
 	engine, mode, conds := planDramaVideo(p, shot, prev)
+	if models.SupportsRef2VA(engine) {
+		if note := drama.FormatVideoImageNote(drama.VideoImageRefs(p, shot, prev)); note != "" {
+			prompt = strings.TrimSpace(prompt + "\n" + note)
+		}
+	}
 	dur := shot.Duration
 	if dur <= 0 {
 		dur = p.VideoDuration
@@ -744,6 +749,7 @@ func planDramaVideo(p *models.DramaProject, shot models.DramaShot, prev *models.
 	continueEngine := emptyAs(p.ContinueEngine, models.EngineH3Ref2VAInt8)
 	zero := 0
 	start := 0.0
+	imgConds := drama.VideoImageConditions(p, shot, prev)
 	if shot.ContinueFromPrev && prev != nil {
 		engine = continueEngine
 		if models.SupportsRef2VA(engine) {
@@ -751,9 +757,7 @@ func planDramaVideo(p *models.DramaProject, shot models.DramaShot, prev *models.
 			if prev.VideoUploadID != "" {
 				conds = append(conds, models.AssetCondition{UploadID: prev.VideoUploadID, Role: "reference", Type: "video", StartSeconds: &start})
 			}
-			if shot.ImageUploadID != "" {
-				conds = append(conds, models.AssetCondition{UploadID: shot.ImageUploadID, Role: "reference", Type: "image"})
-			}
+			conds = append(conds, imgConds...)
 			if len(conds) == 0 {
 				mode = models.ModeT2VA
 				if models.IsH3Ref2VAInt8(engine) {
@@ -796,14 +800,14 @@ func planDramaVideo(p *models.DramaProject, shot models.DramaShot, prev *models.
 		return engine, models.ModeT2VA, nil
 	}
 	if models.IsH3Ref2VAInt8(engine) {
-		if shot.ImageUploadID != "" {
-			return engine, models.ModeRef2VA, []models.AssetCondition{{UploadID: shot.ImageUploadID, Role: "reference", Type: "image"}}
+		if len(imgConds) > 0 {
+			return engine, models.ModeRef2VA, imgConds
 		}
 		return models.EngineH3, models.ModeT2VA, nil
 	}
 	if models.IsH3Director(engine) {
-		if shot.ImageUploadID != "" {
-			return engine, models.ModeRef2VA, []models.AssetCondition{{UploadID: shot.ImageUploadID, Role: "reference", Type: "image"}}
+		if len(imgConds) > 0 {
+			return engine, models.ModeRef2VA, imgConds
 		}
 		return engine, models.ModeT2VA, nil
 	}

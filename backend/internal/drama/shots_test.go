@@ -1,6 +1,10 @@
 package drama
 
-import "testing"
+import (
+	"testing"
+
+	"aishow/internal/models"
+)
 
 func TestNormalizeShotsReindexes(t *testing.T) {
 	got := NormalizeShots(ParseShots(`[{"title":"A","scene":"巷口","duration":1},{"image_prompt":"特写","duration":99}]`))
@@ -65,6 +69,15 @@ func TestGates(t *testing.T) {
 	shots[0].Scene = "A"
 	shots[1].ImagePrompt = "B"
 	if err := RequireStoryboard(shots); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRequireStepVideoDoesNotWaitForAllImages(t *testing.T) {
+	shots := FillEmptyShots(2)
+	shots[0].Scene = "巷口"
+	shots[1].Scene = "便利店"
+	if err := RequireStep(models.DramaStepVideo, "剧本", shots, nil); err != nil {
 		t.Fatal(err)
 	}
 }
