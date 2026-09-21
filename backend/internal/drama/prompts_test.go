@@ -27,6 +27,53 @@ func TestParseStoryboardContentObjectAndFence(t *testing.T) {
 	}
 }
 
+func TestParseStoryboardContentPrefersShotsObject(t *testing.T) {
+	raw := `先看这一镜 {"index":1,"title":"示例","scene":"不要用这个"} 正式结果：{"shots":[{"scene":"巷口","image_prompt":"a"},{"scene":"便利店","image_prompt":"b"}]}`
+	shots, err := ParseStoryboardContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shots) != 2 || shots[0].Scene != "巷口" || shots[1].Scene != "便利店" {
+		t.Fatalf("%+v", shots)
+	}
+}
+
+func TestParseStoryboardContentTruncatedKeepsCompleteShots(t *testing.T) {
+	raw := `{"shots":[{"title":"巷口","scene":"雨夜","image_prompt":"竖屏"},{"title":"对视","scene":"停住","image_prompt":"近景"},{"title":"离开","scene":"`
+	shots, err := ParseStoryboardContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shots) != 2 {
+		t.Fatalf("len=%d %+v", len(shots), shots)
+	}
+}
+
+func TestParseStoryboardContentStripsUnclosedThink(t *testing.T) {
+	raw := `<think>草稿 {"index":1,"scene":"假的"} {"shots":[{"scene":"雨夜","image_prompt":"竖屏"},{"scene":"便利店","image_prompt":"近景"}]}`
+	shots, err := ParseStoryboardContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shots) != 2 || shots[0].Scene != "雨夜" {
+		t.Fatalf("%+v", shots)
+	}
+}
+
+func TestStoryboardPromptAsksForCount(t *testing.T) {
+	sys := StoryboardSystemPrompt(6, 30)
+	if !strings.Contains(sys, "6 个镜头") || !strings.Contains(sys, "禁止只返回第 1 镜") {
+		t.Fatalf("system=%s", sys)
+	}
+	if !strings.Contains(sys, `"index":2`) {
+		t.Fatal("example should include a second shot")
+	}
+	user := StoryboardUserPrompt("夜雨", "", "对白", 6, 30)
+	if !strings.Contains(user, "必须输出 6 个") || !strings.Contains(user, "目标时长：约 30 秒") {
+		t.Fatalf("user=%s", user)
+	}
+}
+
 func TestParseStoryboardContentArray(t *testing.T) {
 	shots, err := ParseStoryboardContent(`[{"scene":"A","image_prompt":"a"},{"scene":"B","image_prompt":"b"}]`)
 	if err != nil {

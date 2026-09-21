@@ -365,8 +365,8 @@ func (s *Server) runDramaStoryboard(c *gin.Context) {
 
 func (s *Server) generateDramaStoryboard(projectID, style, styleNotes, script string, targetSec int) {
 	n := drama.SuggestedShotCount(targetSec)
-	system := drama.StoryboardSystemPrompt()
-	user := drama.StoryboardUserPrompt(style, styleNotes, script)
+	system := drama.StoryboardSystemPrompt(n, targetSec)
+	user := drama.StoryboardUserPrompt(style, styleNotes, script, n, targetSec)
 	mock := func() string { return drama.EncodeShots(drama.MockStoryboard(script, style, n)) }
 	content, model, err := s.dramaChat(true, system, user, mock)
 	shots, parseErr := []models.DramaShot(nil), error(nil)

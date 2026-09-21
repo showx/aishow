@@ -68,9 +68,11 @@ func (c *Client) Complete(ctx context.Context, base, token, model, system, user 
 		},
 		"temperature": 0.7,
 		"think":       false,
+		"max_tokens":  8192,
 	}
 	if jsonMode {
 		payload["response_format"] = map[string]string{"type": "json_object"}
+		payload["max_tokens"] = 16384
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {

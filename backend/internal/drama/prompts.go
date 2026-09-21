@@ -20,22 +20,37 @@ func WriteUserPrompt(idea, style string, targetSec int) string {
 	return fmt.Sprintf("题材/意图：%s\n风格：%s\n目标时长：约 %d 秒", strings.TrimSpace(idea), emptyAs(style, "未指定"), targetSec)
 }
 
-func StoryboardSystemPrompt() string {
-	return fmt.Sprintf(`你是短剧分镜师。把剧本拆成不超过 %d 个镜头的竖屏分镜。必须返回 JSON 对象，格式：
-{"shots":[{"index":1,"title":"镜头名","scene":"画面描述（中文）","dialogue":"对白","image_prompt":"中文出图提示，只写这一个瞬间的构图、人物外形、场景与情绪","video_prompt":"该镜视频运动/表演提示（中文）","duration":5,"beats":[{"index":1,"time_range":"0-2秒","action":"这一拍在做什么","image_prompt":"这一拍单独的中文出图提示"}]}]}
+func StoryboardSystemPrompt(count, targetSec int) string {
+	count, targetSec = storyboardBudget(count, targetSec)
+	return fmt.Sprintf(`你是短剧分镜师。把剧本拆成 %d 个镜头的竖屏分镜（目标约 %d 秒，最多 %d 镜）。必须返回 JSON 对象，shots 数组必须有 %d 条，禁止只返回第 1 镜。格式：
+{"shots":[{"index":1,"title":"开场","scene":"画面描述（中文）","dialogue":"对白","image_prompt":"中文出图提示，只写这一个瞬间","video_prompt":"运镜与表演","duration":5,"beats":[]},{"index":2,"title":"下一镜","scene":"接着发生的画面","dialogue":"","image_prompt":"中文出图提示","video_prompt":"将@视频1从最后一帧向后延长，……","duration":5,"beats":[]}]}
 规则：
-- duration 为该镜建议秒数（2-15）。
-- image_prompt 和 beats[].image_prompt 必须全程中文：写构图、人物外形、服装、场景、光线与情绪。禁止英文单词堆砌或英文 tag（人名、商标可保留原文）。
+- duration 为该镜建议秒数（2-15），各镜之和接近目标时长。
+- image_prompt 必须全程中文：写构图、人物外形、服装、场景、光线与情绪。禁止英文单词堆砌或英文 tag（人名、商标可保留原文）。
 - 一张图只表现一个机位、一个瞬间，禁止把多个镜头竖向或分格拼在同一张图里。
-- 若一镜内有多个时间段或机位切换，必须拆到 beats 里，每拍一条独立中文出图提示；没有多拍时 beats 可为空数组。
-- 每个 beat 必须有 action：这一拍里人物做什么、怎么动、镜头怎么跟。成片时会把节拍时间轴发给视频模型，video_prompt 只写总体运镜与表演，不要和 beats 矛盾，也不要把整段时间轴再抄进 video_prompt。
+- 多数镜头 beats 用空数组 []。只有一镜内确有多段时间或机位切换时才拆拍；不要把整部戏写成第一镜的 beats。
+- 每个 beat 必须有 action：这一拍里人物做什么、怎么动、镜头怎么跟。成片时会把节拍时间轴发给视频模型，video_prompt 只写总体运镜与表演。
 - 遵守给出的风格和风格注意事项。
 - 从第2镜起，video_prompt 必须写成续写而不是参考：用「将@视频1从最后一帧向后延长」这类写法，必须带 @；禁止写「参考视频1」（参考会变成借鉴生成新片）。只写从上一镜结尾接着发生的增量动作，不要重新开场、不要从静止起势。第1镜不要写承接。@视频1 表示上一镜成片。
-不要输出 JSON 以外的文字。`, models.DramaMaxShots)
+不要输出 JSON 以外的文字。`, count, targetSec, models.DramaMaxShots, count)
 }
 
-func StoryboardUserPrompt(style, styleNotes, script string) string {
-	return fmt.Sprintf("风格：%s\n风格注意事项：%s\n剧本：\n%s\n\n只输出一个 JSON 对象，不要解释，不要思考过程。", emptyAs(style, "未指定"), emptyAs(styleNotes, "无"), script)
+func StoryboardUserPrompt(style, styleNotes, script string, count, targetSec int) string {
+	count, targetSec = storyboardBudget(count, targetSec)
+	return fmt.Sprintf("风格：%s\n风格注意事项：%s\n目标时长：约 %d 秒\n镜头数：必须输出 %d 个，shots 数组长度必须是 %d，不要只写第 1 镜。\n剧本：\n%s\n\n只输出一个 JSON 对象，不要解释，不要思考过程。", emptyAs(style, "未指定"), emptyAs(styleNotes, "无"), targetSec, count, count, script)
+}
+
+func storyboardBudget(count, targetSec int) (int, int) {
+	if targetSec <= 0 {
+		targetSec = 60
+	}
+	if count < 1 {
+		count = SuggestedShotCount(targetSec)
+	}
+	if count > models.DramaMaxShots {
+		count = models.DramaMaxShots
+	}
+	return count, targetSec
 }
 
 func RewriteImageSystemPrompt() string {
@@ -108,7 +123,7 @@ func FormatBeats(shot models.DramaShot, continueFromPrev bool) string {
 }
 
 func ParseStoryboardContent(content string) ([]models.DramaShot, error) {
-	text := strings.TrimSpace(thinkBlock.ReplaceAllString(content, ""))
+	text := stripThink(content)
 	if m := jsonFence.FindStringSubmatch(text); len(m) > 1 {
 		text = strings.TrimSpace(m[1])
 	}
@@ -117,31 +132,70 @@ func ParseStoryboardContent(content string) ([]models.DramaShot, error) {
 	}
 	shots := ParseShots(text)
 	if len(shots) == 0 {
+		shots = ParseShots(recoverPartialShots(text))
+	}
+	if len(shots) == 0 {
 		return nil, fmt.Errorf("分镜 JSON 无法解析")
 	}
 	return DecorateContinue(shots), nil
 }
 
+func stripThink(content string) string {
+	s := thinkBlock.ReplaceAllString(content, "")
+	low := strings.ToLower(s)
+	if i := strings.LastIndex(low, "</think>"); i >= 0 {
+		return strings.TrimSpace(s[i+len("</think>"):])
+	}
+	if i := strings.Index(low, "<think>"); i >= 0 {
+		rest := s[i+len("<think>"):]
+		if j := strings.Index(rest, `{"shots"`); j >= 0 {
+			return strings.TrimSpace(rest[j:])
+		}
+		if j := strings.Index(rest, "{"); j >= 0 {
+			return strings.TrimSpace(rest[j:])
+		}
+		if j := strings.Index(rest, "["); j >= 0 {
+			return strings.TrimSpace(rest[j:])
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
 func extractJSONPayload(text string) string {
 	text = strings.TrimSpace(text)
+	if i := strings.Index(text, `{"shots"`); i >= 0 {
+		if extracted := extractBalanced(text[i:]); extracted != "" {
+			return extracted
+		}
+	}
 	obj := strings.Index(text, "{")
 	arr := strings.Index(text, "[")
 	start := -1
-	endChar := byte('}')
 	if obj >= 0 && (arr < 0 || obj < arr) {
 		start = obj
-		endChar = '}'
 	} else if arr >= 0 {
 		start = arr
-		endChar = ']'
 	}
 	if start < 0 {
+		return ""
+	}
+	return extractBalanced(text[start:])
+}
+
+func extractBalanced(text string) string {
+	if text == "" {
+		return ""
+	}
+	endChar := byte('}')
+	if text[0] == '[' {
+		endChar = ']'
+	} else if text[0] != '{' {
 		return ""
 	}
 	depth := 0
 	inStr := false
 	esc := false
-	for i := start; i < len(text); i++ {
+	for i := 0; i < len(text); i++ {
 		c := text[i]
 		if inStr {
 			if esc {
@@ -165,11 +219,83 @@ func extractJSONPayload(text string) string {
 		case '}', ']':
 			depth--
 			if depth == 0 && c == endChar {
-				return strings.TrimSpace(text[start : i+1])
+				return strings.TrimSpace(text[:i+1])
 			}
 		}
 	}
 	return ""
+}
+
+func recoverPartialShots(text string) string {
+	start := -1
+	if i := strings.Index(text, `"shots"`); i >= 0 {
+		rest := text[i+len(`"shots"`):]
+		if j := strings.Index(rest, "["); j >= 0 {
+			start = i + len(`"shots"`) + j
+		}
+	}
+	if start < 0 {
+		start = strings.Index(text, "[")
+	}
+	if start < 0 {
+		return ""
+	}
+	objs := extractCompleteArrayObjects(text[start:])
+	if len(objs) == 0 {
+		return ""
+	}
+	return "[" + strings.Join(objs, ",") + "]"
+}
+
+func extractCompleteArrayObjects(arr string) []string {
+	if arr == "" || arr[0] != '[' {
+		return nil
+	}
+	var out []string
+	depth := 0
+	inStr := false
+	esc := false
+	objStart := -1
+	for i := 0; i < len(arr); i++ {
+		c := arr[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			if depth == 1 {
+				objStart = i
+			}
+			depth++
+		case '}':
+			depth--
+			if depth == 1 && objStart >= 0 {
+				out = append(out, arr[objStart:i+1])
+				objStart = -1
+			}
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return out
+			}
+		}
+	}
+	return out
 }
 
 func DecorateContinue(shots []models.DramaShot) []models.DramaShot {
