@@ -21,7 +21,7 @@ import (
 const (
 	readyTimeout  = 12 * time.Minute
 	stopTimeout   = 20 * time.Second
-	vramCooldown  = 5 * time.Second
+	vramCooldown  = 12 * time.Second
 	probeInterval = 2 * time.Second
 )
 
@@ -140,6 +140,7 @@ func (m *Manager) EnsureReady(engine string, snap models.SettingsPayload, abort 
 	}
 
 	m.evictExtras(engine, snap, report)
+	m.waitVRAM(report, abort)
 
 	if m.ready(targetURL) {
 		report(models.EngineLabel(engine) + " 已在线，其它模型已按上限下线")
@@ -151,13 +152,26 @@ func (m *Manager) EnsureReady(engine string, snap models.SettingsPayload, abort 
 	}
 
 	label := models.EngineLabel(engine)
-	report("启动 " + label)
-	if err := m.startEngine(engine); err != nil {
-		return err
+	if fatal := m.healthFatal(targetURL); fatal != "" {
+		report("下线未装载成功的 " + label)
+		_ = m.stopEngine(engine, targetURL, snap)
+		m.waitVRAM(report, abort)
+	}
+
+	needStart := !m.alive(targetURL)
+	if needStart {
+		killPort(portOf(targetURL))
+		report("启动 " + label)
+		if err := m.startEngine(engine); err != nil {
+			return err
+		}
+	} else {
+		report(label + " 已在加载，等待就绪")
 	}
 	started := time.Now()
 	lastTalk := time.Time{}
 	deadline := time.Now().Add(readyTimeout)
+	restarts := 0
 	for time.Now().Before(deadline) {
 		if abort() {
 			return fmt.Errorf("任务已取消")
@@ -166,8 +180,29 @@ func (m *Manager) EnsureReady(engine string, snap models.SettingsPayload, abort 
 			report(fmt.Sprintf("%s 已就绪（加载 %s）", label, time.Since(started).Truncate(time.Second)))
 			return nil
 		}
-		if exited := m.processExited(engine); exited {
-			return fmt.Errorf("启动 %s 失败，边车进程已退出。请看对应启动窗口", label)
+		if fatal := m.healthFatal(targetURL); fatal != "" {
+			return fmt.Errorf("启动 %s 失败：%s", label, fatal)
+		}
+		if m.processDead(engine, targetURL) && time.Since(started) > 4*time.Second {
+			detail := clipString(tailSidecarLog(m.root, engine, 18), 360)
+			if restarts < 1 {
+				restarts++
+				report("边车退出，释放显存后重拉一次")
+				m.waitVRAM(report, abort)
+				if abort() {
+					return fmt.Errorf("任务已取消")
+				}
+				killPort(portOf(targetURL))
+				if err := m.startEngine(engine); err != nil {
+					return err
+				}
+				started = time.Now()
+				continue
+			}
+			if detail != "" {
+				return fmt.Errorf("启动 %s 失败，边车进程已退出：%s", label, detail)
+			}
+			return fmt.Errorf("启动 %s 失败，边车进程已退出。请看 backend/data/sidecar-logs/%s.log", label, engine)
 		}
 		if lastTalk.IsZero() || time.Since(lastTalk) >= 8*time.Second {
 			report(waitMessage(label, time.Since(started), m.loadHint(targetURL)))
@@ -249,12 +284,16 @@ func (m *Manager) startEngine(engine string) error {
 	if _, err := os.Stat(script); err != nil {
 		return fmt.Errorf("找不到启动脚本 %s", script)
 	}
-	proc, err := startScript(script, m.root)
+	logPath := sidecarLogPath(m.root, engine)
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		log.Printf("orchestrator log dir: %v", err)
+	}
+	proc, err := startScript(script, m.root, "AISHOW_SIDECAR_LOG="+logPath)
 	if err != nil {
 		return fmt.Errorf("启动 %s 失败: %w", sp.Label, err)
 	}
 	m.procs[engine] = proc
-	log.Printf("orchestrator started %s pid=%d script=%s", engine, proc.Pid, script)
+	log.Printf("orchestrator started %s pid=%d script=%s log=%s", engine, proc.Pid, script, logPath)
 	return nil
 }
 
@@ -289,6 +328,70 @@ func (m *Manager) processExited(engine string) bool {
 		return false
 	}
 	return processGone(p.Pid)
+}
+
+func (m *Manager) processDead(engine, endpoint string) bool {
+	if m.alive(endpoint) {
+		return false
+	}
+	return m.processExited(engine)
+}
+
+func (m *Manager) healthFatal(base string) string {
+	body, ok := m.getJSON(strings.TrimRight(base, "/") + "/health")
+	return healthFatal(body, ok)
+}
+
+func (m *Manager) waitVRAM(report func(string), abort func() bool) {
+	if report == nil {
+		report = func(string) {}
+	}
+	used, total, ok := gpuMemoryMB()
+	if !ok || total <= 0 {
+		time.Sleep(vramCooldown)
+		return
+	}
+	target := total / 3
+	if target < 4096 {
+		target = 4096
+	}
+	if target > 8192 {
+		target = 8192
+	}
+	if used <= target {
+		time.Sleep(3 * time.Second)
+		return
+	}
+	report(fmt.Sprintf("等待显存释放（已用 %d / %d MB）", used, total))
+	deadline := time.Now().Add(90 * time.Second)
+	stable := 0
+	prev := used
+	for time.Now().Before(deadline) {
+		if abort != nil && abort() {
+			return
+		}
+		time.Sleep(2 * time.Second)
+		used, total, ok = gpuMemoryMB()
+		if !ok {
+			return
+		}
+		if used <= target {
+			report(fmt.Sprintf("显存已到 %d MB，开始装新模型", used))
+			time.Sleep(2 * time.Second)
+			return
+		}
+		if used >= prev-256 {
+			stable++
+		} else {
+			stable = 0
+			report(fmt.Sprintf("显存下降中 %d / %d MB", used, total))
+		}
+		prev = used
+		if stable >= 10 {
+			report(fmt.Sprintf("显存仍占 %d MB，继续启动", used))
+			return
+		}
+	}
 }
 
 func (m *Manager) endpoint(engine string, snap models.SettingsPayload) string {
@@ -369,6 +472,9 @@ func (m *Manager) loadHint(base string) string {
 	body, ok := m.getJSON(base + "/health")
 	if !ok {
 		return "进程已拉起，正在导入依赖 / 读盘"
+	}
+	if hint, _ := body["hint"].(string); strings.TrimSpace(hint) != "" {
+		return hint
 	}
 	if err, _ := body["error"].(string); err != "" {
 		return err

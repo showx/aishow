@@ -11,10 +11,11 @@ import (
 	"syscall"
 )
 
-func startScript(script, workDir string) (*os.Process, error) {
+func startScript(script, workDir string, extraEnv ...string) (*os.Process, error) {
 	cmd := exec.Command("cmd.exe", "/C", script)
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(), "AISHOW_HEADLESS=1")
+	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE
 	if err := cmd.Start(); err != nil {
 		return nil, err

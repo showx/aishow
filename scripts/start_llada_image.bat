@@ -35,7 +35,15 @@ if not exist "%LLADA_MODEL%\model_index.json" (
 )
 
 cd /d "%AISHOW_ROOT%"
-"%LLADA_PYTHON%" "%AISHOW_ROOT%\backend\python\llada_image_server.py"
+if defined AISHOW_SIDECAR_LOG (
+  for %%I in ("%AISHOW_SIDECAR_LOG%") do if not exist "%%~dpI" mkdir "%%~dpI"
+  echo 日志: %AISHOW_SIDECAR_LOG%
+  echo ===== %date% %time% start =====>> "%AISHOW_SIDECAR_LOG%"
+  "%LLADA_PYTHON%" "%AISHOW_ROOT%\backend\python\llada_image_server.py" >> "%AISHOW_SIDECAR_LOG%" 2>&1
+) else (
+  "%LLADA_PYTHON%" "%AISHOW_ROOT%\backend\python\llada_image_server.py"
+)
 echo.
 echo 边车已退出。看到 ready / listening 之前请不要关窗口。
+if defined AISHOW_SIDECAR_LOG echo 完整日志: %AISHOW_SIDECAR_LOG%
 if /i not "%AISHOW_HEADLESS%"=="1" pause

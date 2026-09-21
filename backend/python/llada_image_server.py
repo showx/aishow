@@ -8,6 +8,7 @@ from __future__ import annotations
 import faulthandler
 faulthandler.enable()
 
+import gc
 import json
 import os
 import queue
@@ -59,8 +60,6 @@ def _patch_transformers_rope() -> None:
 _patch_transformers_rope()
 os.environ.setdefault("LLADA_MOE_BACKEND", "eager")
 
-from src import LLaDAImagePipeline  # noqa: E402
-
 HOST = os.environ.get("LLADA_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LLADA_PORT", "30020"))
 MODEL = os.environ.get("LLADA_MODEL", "inclusionAI/LLaDA-Image-Turbo")
@@ -75,6 +74,7 @@ INFER_Q: queue.Queue[str] = queue.Queue()
 PIPE = None
 LOAD_T0 = 0.0
 LOAD_ERROR = ""
+LOAD_HINT = ""
 VARIANT = "turbo" if "turbo" in MODEL.lower() else "base"
 
 
@@ -154,8 +154,26 @@ def torch_dtype():
     return torch.bfloat16
 
 
+def _is_oom(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(token in text for token in (
+        "out of memory", "oom", "cuda error", "cudaerror", "cudnn", "insufficient memory", "allocate",
+    ))
+
+
+def _release_cuda():
+    gc.collect()
+    try:
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+    except Exception:
+        pass
+
+
 def load_pipe():
-    global PIPE, LOAD_ERROR
+    global PIPE, LOAD_ERROR, LOAD_HINT
+    from src import LLaDAImagePipeline  # noqa: E402
+
     dtype = torch_dtype()
     local = Path(MODEL)
     print(f"[llada-image] loading {MODEL} dtype={dtype} repo={REPO}", flush=True)
@@ -165,17 +183,35 @@ def load_pipe():
     kwargs = {"torch_dtype": dtype, "device": "cuda"}
     if local.exists():
         kwargs["local_files_only"] = True
-    try:
+    attempts = 4
+    last_err = ""
+    for i in range(attempts):
+        LOAD_ERROR = ""
+        LOAD_HINT = f"正在把本地权重装进 GPU（第 {i + 1}/{attempts} 次）"
         try:
-            PIPE = LLaDAImagePipeline.from_pretrained(MODEL, **kwargs)
-        except TypeError:
-            PIPE = LLaDAImagePipeline.from_pretrained(MODEL, torch_dtype=dtype, local_files_only=local.exists())
-            PIPE = PIPE.to("cuda")
-        print("[llada-image] ready", flush=True)
-    except Exception as exc:
-        LOAD_ERROR = str(exc)
-        print("[llada-image] load failed:", traceback.format_exc(), flush=True)
-        raise
+            try:
+                PIPE = LLaDAImagePipeline.from_pretrained(MODEL, **kwargs)
+            except TypeError:
+                PIPE = LLaDAImagePipeline.from_pretrained(MODEL, torch_dtype=dtype, local_files_only=local.exists())
+                PIPE = PIPE.to("cuda")
+            LOAD_HINT = ""
+            print("[llada-image] ready", flush=True)
+            return
+        except Exception as exc:
+            last_err = str(exc)
+            print("[llada-image] load failed:", traceback.format_exc(), flush=True)
+            PIPE = None
+            _release_cuda()
+            if _is_oom(exc) and i + 1 < attempts:
+                wait = 20
+                LOAD_HINT = f"显存不够，{wait} 秒后重试（{i + 2}/{attempts}）"
+                print(f"[llada-image] OOM, retry in {wait}s", flush=True)
+                time.sleep(wait)
+                continue
+            break
+    LOAD_HINT = ""
+    LOAD_ERROR = last_err or "LLaDA-Image 装载失败"
+    print(f"[llada-image] giving up: {LOAD_ERROR}", flush=True)
 
 
 def run_job(job_id: str):
@@ -302,6 +338,7 @@ class Handler(BaseHTTPRequestHandler):
                 "progress": (current or {}).get("progress", 0),
                 "elapsed_sec": elapsed,
                 "error": LOAD_ERROR or None,
+                "hint": LOAD_HINT or None,
                 **text_encoder_payload(),
             })
             return
@@ -376,8 +413,14 @@ def main():
     threading.Thread(target=httpd.serve_forever, daemon=True, name="llada-http").start()
     print(f"[llada-image] listening on http://{HOST}:{PORT}（先探活，权重仍在加载）", flush=True)
     load_pipe()
-    print("[llada-image] inference runs on the main thread", flush=True)
+    if PIPE is None:
+        print("[llada-image] weights not loaded; health stays up so the control plane can see the error", flush=True)
+    else:
+        print("[llada-image] inference runs on the main thread", flush=True)
     while True:
+        if PIPE is None:
+            time.sleep(2)
+            continue
         job_id = INFER_Q.get()
         run_job(job_id)
 
