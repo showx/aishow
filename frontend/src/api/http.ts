@@ -1,6 +1,6 @@
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type JobMode = 't2va' | 'i2va' | 'l2va' | 'fl2va' | 'ref2va' | 't2i' | 'i2i'
-export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-turbo' | 'h3-ref2va-int8' | 'h3-pinkcherry-int8' | 'llada-image'
+export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-turbo' | 'h3-ref2va-int8' | 'h3-pinkcherry-int8' | 'h3-director' | 'llada-image'
 
 export interface JobAsset {
   id: string
@@ -133,7 +133,18 @@ export interface SettingsPayload {
   fasth3_url: string
   h3_turbo_url: string
   h3_pinkcherry_url: string
+  h3_director_url?: string
   llada_image_url: string
+  chat_url?: string
+  chat_model?: string
+  chat_api_token?: string
+  has_chat_token?: boolean
+  chat_models?: string[]
+  tts_url?: string
+  tts_model?: string
+  tts_voice?: string
+  tts_api_token?: string
+  has_tts_token?: boolean
   auto_switch_engine?: boolean
   max_loaded_engines?: number
 }
@@ -246,6 +257,58 @@ export const api = {
     fd.append('file', file)
     return request<UploadFile>('/api/v1/uploads', { method: 'POST', body: fd })
   },
+  dramaProjects: (q = '') => request<DramaProject[]>(`/api/v1/drama-projects${q}`),
+  dramaProject: (id: string) => request<DramaProject>(`/api/v1/drama-projects/${id}`),
+  createDramaProject: (body: { title?: string; idea: string; style?: string; style_notes?: string; target_sec?: number }) =>
+    request<DramaProject>('/api/v1/drama-projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  patchDramaProject: (id: string, body: Record<string, unknown>) =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  deleteDramaProject: (id: string) => request<{ ok: boolean }>(`/api/v1/drama-projects/${id}`, { method: 'DELETE' }),
+  dramaStoryboard: (id: string, body?: { count?: number; replace?: boolean; mode?: 'empty' | 'llm' }) =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}/storyboard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    }),
+  dramaWrite: (id: string) =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}/write`, { method: 'POST' }),
+  dramaRewrite: (id: string, index: number, target: 'image_prompt' | 'video_prompt' | 'continue') =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}/shots/${index}/rewrite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target }),
+    }),
+  chatModels: () => request<{ url: string; model?: string; models: string[]; error?: string }>('/api/v1/chat/models'),
+  dramaImages: (id: string, body?: { indexes?: number[]; queue?: boolean }) =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}/images`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    }),
+  retryDramaImage: (id: string, index: number) =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}/images/${index}/retry`, { method: 'POST' }),
+  dramaVideos: (id: string, body?: { indexes?: number[]; queue?: boolean }) =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}/videos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    }),
+  retryDramaVideo: (id: string, index: number) =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}/videos/${index}/retry`, { method: 'POST' }),
+  dramaCompile: (id: string, body?: { indexes?: number[]; burn_subtitles?: boolean; mix_tts?: boolean }) =>
+    request<DramaProject>(`/api/v1/drama-projects/${id}/compile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    }),
 }
 
 export const modeLabel: Record<JobMode, string> = {
@@ -265,6 +328,7 @@ export const engineLabel: Record<JobEngine, string> = {
   'h3-turbo': 'H3 Turbo LoRA',
   'h3-ref2va-int8': 'H3 Ref2VA INT8',
   'h3-pinkcherry-int8': 'H3 PinkCherry INT8',
+  'h3-director': 'H3 Timeline Director',
   'llada-image': 'LLaDA-Image',
 }
 
@@ -273,6 +337,7 @@ export function engineName(engine?: string) {
   if (engine === 'h3-turbo') return engineLabel['h3-turbo']
   if (engine === 'h3-ref2va-int8') return engineLabel['h3-ref2va-int8']
   if (engine === 'h3-pinkcherry-int8') return engineLabel['h3-pinkcherry-int8']
+  if (engine === 'h3-director') return engineLabel['h3-director']
   if (engine === 'llada-image') return engineLabel['llada-image']
   return engineLabel.h3
 }
@@ -280,7 +345,7 @@ export function engineName(engine?: string) {
 export function fallbackTextEncoder(engine?: string) {
   if (engine === 'llada-image') return 'LLaDA-Image 6B'
   if (engine === 'h3-pinkcherry-int8') return 'PinkCherry Qwen3-VL 32B'
-  if (engine === 'fasth3' || engine === 'h3-max' || engine === 'h3-ref2va-int8') return 'Qwen3-VL 32B 量化'
+  if (engine === 'fasth3' || engine === 'h3-max' || engine === 'h3-ref2va-int8' || engine === 'h3-director') return 'Qwen3-VL 32B 量化'
   return 'Qwen3-VL 32B NF4'
 }
 
@@ -306,6 +371,92 @@ export function textUnderstandingShort(job: { engine?: string; text_encoder_labe
 
 export function isImageJob(job: { engine?: string; mode?: string }) {
   return job.engine === 'llada-image' || job.mode === 't2i' || job.mode === 'i2i'
+}
+
+export type DramaStep = 'write' | 'storyboard' | 'image' | 'video' | 'compile'
+export type DramaStatus = 'draft' | 'writing' | 'storyboard' | 'imaging' | 'videoing' | 'compiling' | 'done' | 'failed'
+
+export interface DramaShotBeat {
+  index: number
+  time_range: string
+  action: string
+  image_prompt?: string
+}
+
+export interface DramaImageRef {
+  upload_id: string
+  name?: string
+  kind?: 'character' | 'scene' | ''
+  url?: string
+}
+
+export interface DramaShot {
+  index: number
+  title: string
+  scene: string
+  dialogue?: string
+  image_prompt: string
+  video_prompt: string
+  duration: number
+  image_job_id?: string
+  extra_image_job_ids?: string[]
+  video_job_id?: string
+  image_upload_id?: string
+  video_upload_id?: string
+  last_frame_upload_id?: string
+  skip_prev_images?: boolean
+  queue_image?: boolean
+  queue_video?: boolean
+  continue_from_prev?: boolean
+  image_refs?: DramaImageRef[]
+  beats?: DramaShotBeat[]
+  image_job?: Job
+  extra_image_jobs?: Job[]
+  video_job?: Job
+  image_url?: string
+  image_urls?: string[]
+  video_url?: string
+  last_frame_url?: string
+  image_ref_views?: DramaImageRef[]
+}
+
+export interface DramaProject {
+  id: string
+  user_id: string
+  title: string
+  idea: string
+  style: string
+  style_notes: string
+  target_sec: number
+  step: DramaStep
+  status: DramaStatus
+  script_text: string
+  shots_json: string
+  write_model?: string
+  write_result?: string
+  storyboard_model?: string
+  storyboard_result?: string
+  image_engine: JobEngine
+  image_aspect: string
+  image_short_edge: number
+  image_quality: string
+  video_engine: JobEngine
+  continue_engine: JobEngine
+  video_aspect: string
+  video_short_edge: number
+  video_duration: number
+  image_refs?: DramaImageRef[]
+  burn_subtitles?: boolean
+  mix_tts?: boolean
+  compile_job_id?: string
+  compile_status?: string
+  compile_result?: string
+  compile_indexes_json?: string
+  created_at: string
+  updated_at: string
+  shots?: DramaShot[]
+  compile_indexes?: number[]
+  compile_url?: string
 }
 
 export const statusLabel: Record<JobStatus, string> = {

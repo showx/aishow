@@ -24,7 +24,7 @@
 
 ## 功能
 
-- **视频**：文生 `t2va`，首帧 / 尾帧 / 首尾帧 `fl2va`，参考生成 `ref2va`
+- **视频**：文生 `t2va`，首帧 / 尾帧 / 首尾帧 `fl2va`，参考生成 `ref2va`；Timeline Director 用 SelfLift 二采试加速
 - **图片**：LLaDA-Image 文生图 `t2i`、指令编辑 `i2i`
 - **队列**：SQLite 持久化；离线引擎也能先投，轮到再启动边车
 - **24GB 单卡**：默认同时只加载 1 个模型，队列跨引擎时自动切换
@@ -121,6 +121,7 @@ npm run dev
    | 先出一条文生视频 | FastH3 GGUF Q4 | `download_fasth3_gguf.ps1` | `start_fasth3_gguf.bat` |
    | 文生 / 首尾帧 | H3-Base NF4 或 Turbo LoRA | 见引擎文档 | `start_h3_nf4.bat` / `start_h3_turbo_lora.bat` |
    | 参考图生成 | H3 Ref2VA INT8 | `download_h3_ref2va.ps1` | `start_h3_ref2va_int8.bat` |
+   | 二采加速文生 / 参考 | H3 Timeline Director | `download_h3_latent_upscaler.ps1` | `start_h3_director.bat` |
    | 文生图 | LLaDA-Image | clone 官方仓库 | `start_llada_image.bat` |
 
 3. 打开 **推理节点**，把模式改成 `auto`，保存。
@@ -132,7 +133,7 @@ npm run dev
 
 | 文档 | 内容 |
 | --- | --- |
-| [使用说明](docs/usage.md) | 登录、指挥台、工坊、队列、作品库、节点、用户 |
+| [使用说明](docs/usage.md) | 登录、指挥台、工坊、短剧、队列、作品库、节点、用户 |
 | [引擎与权重](docs/engines.md) | `paths.bat`、下载、启动、LLaDA、SGLang |
 | [配置与局域网](docs/config.md) | `.env`、账号、CORS、备份、常见问题 |
 
@@ -163,5 +164,5 @@ node capture-screenshots.mjs
 
 - [MiniMax-H3](https://github.com/MiniMax-AI/MiniMax-H3) / [SGLang](https://github.com/sgl-project/sglang)
 - [DiffSynth-Studio](https://github.com/modelscope/DiffSynth-Studio)
-- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) · [FastH3 GGUF](https://huggingface.co/realrebelai/FastH3_GGUFs)
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) · [FastH3 GGUF](https://huggingface.co/realrebelai/FastH3_GGUFs) · [Timeline Director](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector)
 - [LLaDA-Image](https://github.com/inclusionAI/LLaDA-Image)

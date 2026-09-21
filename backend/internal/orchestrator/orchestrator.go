@@ -297,6 +297,8 @@ func (m *Manager) endpoint(engine string, snap models.SettingsPayload) string {
 		return strings.TrimRight(snap.SGLANGRef2VAURL, "/")
 	case models.EngineH3PinkCherryInt8:
 		return strings.TrimRight(snap.H3PinkCherryURL, "/")
+	case models.EngineH3Director:
+		return strings.TrimRight(snap.H3DirectorURL, "/")
 	case models.EngineFastH3:
 		return strings.TrimRight(snap.FastH3URL, "/")
 	case models.EngineH3Turbo:
@@ -328,7 +330,7 @@ func (m *Manager) comfyURLFor(engine string) string {
 	switch models.CanonicalEngine(engine) {
 	case models.EngineH3PinkCherryInt8:
 		return m.pinkCherryComfyURL()
-	case models.EngineFastH3, models.EngineH3Ref2VAInt8:
+	case models.EngineFastH3, models.EngineH3Ref2VAInt8, models.EngineH3Director:
 		return m.comfyURL()
 	default:
 		return ""
@@ -457,6 +459,7 @@ func exclusiveEngines() []string {
 		models.EngineH3Turbo,
 		models.EngineH3Ref2VAInt8,
 		models.EngineH3PinkCherryInt8,
+		models.EngineH3Director,
 		models.EngineFastH3,
 		models.EngineLLadaImage,
 	}
@@ -468,6 +471,8 @@ func engineSpec(engine string) (spec, bool) {
 		return spec{ID: models.EngineH3Ref2VAInt8, Label: "H3 Ref2VA INT8", Script: "start_h3_ref2va_int8.bat", UsesComfy: true, ComfyURL: "http://127.0.0.1:8188"}, true
 	case models.EngineH3PinkCherryInt8:
 		return spec{ID: models.EngineH3PinkCherryInt8, Label: "H3 PinkCherry INT8", Script: "start_h3_pinkcherry_int8.bat", UsesComfy: true, ComfyURL: "http://127.0.0.1:8189"}, true
+	case models.EngineH3Director:
+		return spec{ID: models.EngineH3Director, Label: "H3 Timeline Director", Script: "start_h3_director.bat", UsesComfy: true, ComfyURL: "http://127.0.0.1:8188"}, true
 	case models.EngineFastH3:
 		return spec{ID: models.EngineFastH3, Label: "FastH3", Script: "start_fasth3_gguf.bat", UsesComfy: true, ComfyURL: "http://127.0.0.1:8188"}, true
 	case models.EngineH3Turbo:

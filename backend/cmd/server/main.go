@@ -53,9 +53,10 @@ func main() {
 		return settings.Snapshot(conn, cfg)
 	})
 	w := worker.New(cfg, conn, q, store, orch)
+	srv := api.New(cfg, conn, q, store, h, hw, orch)
+	w.SetAfterFinish(srv.OnDramaJobFinished)
 	w.Start()
 
-	srv := api.New(cfg, conn, q, store, h, hw, orch)
 	addr := cfg.ListenAddr()
 	log.Printf("aishow control plane listening on %s", addr)
 	if err := http.ListenAndServe(addr, srv.Router()); err != nil {

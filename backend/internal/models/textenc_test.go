@@ -11,6 +11,7 @@ func TestDescribeTextEncoder(t *testing.T) {
 		{"h3-turbo", "", "minimax-h3-text-encoder-nf4.safetensors", "Qwen3-VL 32B NF4"},
 		{"fasth3", "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors", "qwen3vl_32b_heretic_minimax_h3_nvfp4.safetensors", "Qwen3-VL 32B NVFP4"},
 		{"h3-ref2va-int8", "qwen3vl_32b_minimax_h3_int8_convrot.safetensors", "qwen3vl_32b_minimax_h3_int8_convrot.safetensors", "Qwen3-VL 32B INT8"},
+		{"h3-director", "", "qwen3vl-32b", "Qwen3-VL 32B 量化"},
 		{"h3-pinkcherry-int8", "", "pinkcherry-qwen3vl-32b", "PinkCherry Qwen3-VL 32B"},
 		{"h3-pinkcherry-int8", "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors", "PinkCherry Qwen3-VL 32B NVFP4"},
 		{"fasth3", "", "qwen3vl-32b", "Qwen3-VL 32B 量化"},

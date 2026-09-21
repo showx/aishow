@@ -23,7 +23,15 @@ const (
 	KeyFastH3            = "fasth3_url"
 	KeyH3Turbo           = "h3_turbo_url"
 	KeyH3PinkCherry      = "h3_pinkcherry_url"
+	KeyH3Director        = "h3_director_url"
 	KeyLLaDAImage        = "llada_image_url"
+	KeyChatURL           = "chat_url"
+	KeyChatModel         = "chat_model"
+	KeyChatToken         = "chat_api_token"
+	KeyTTSURL            = "tts_url"
+	KeyTTSModel          = "tts_model"
+	KeyTTSVoice          = "tts_voice"
+	KeyTTSToken          = "tts_api_token"
 	KeyAutoSwitchEngine  = "auto_switch_engine"
 	KeyMaxLoadedEngines  = "max_loaded_engines"
 	KeyAllowRegister     = "allow_register"
@@ -43,7 +51,15 @@ func Seed(db *gorm.DB, cfg config.Config) error {
 		KeyFastH3:            cfg.FastH3URL,
 		KeyH3Turbo:           cfg.H3TurboURL,
 		KeyH3PinkCherry:      cfg.H3PinkCherryURL,
+		KeyH3Director:        cfg.H3DirectorURL,
 		KeyLLaDAImage:        cfg.LLaDAImageURL,
+		KeyChatURL:           cfg.ChatURL,
+		KeyChatModel:         cfg.ChatModel,
+		KeyChatToken:         cfg.ChatAPIToken,
+		KeyTTSURL:            cfg.TTSURL,
+		KeyTTSModel:          cfg.TTSModel,
+		KeyTTSVoice:          cfg.TTSVoice,
+		KeyTTSToken:          cfg.TTSAPIToken,
 		KeyAutoSwitchEngine:  boolString(cfg.AutoSwitchEngine),
 		KeyMaxLoadedEngines:  strconv.Itoa(max1(cfg.MaxLoadedEngines)),
 		KeyAllowRegister:     boolString(cfg.AllowRegister),
@@ -78,6 +94,16 @@ func Snapshot(db *gorm.DB, cfg config.Config) models.SettingsPayload {
 	if token != "" {
 		masked = "********"
 	}
+	chatToken := Get(db, KeyChatToken, cfg.ChatAPIToken)
+	chatMasked := ""
+	if chatToken != "" {
+		chatMasked = "********"
+	}
+	ttsToken := Get(db, KeyTTSToken, cfg.TTSAPIToken)
+	ttsMasked := ""
+	if ttsToken != "" {
+		ttsMasked = "********"
+	}
 	return models.SettingsPayload{
 		InferenceMode:     Get(db, KeyInferenceMode, cfg.InferenceMode),
 		SGLANGFL2VAURL:    Get(db, KeyFL2VA, cfg.SGLANGFL2VAURL),
@@ -92,7 +118,17 @@ func Snapshot(db *gorm.DB, cfg config.Config) models.SettingsPayload {
 		FastH3URL:         Get(db, KeyFastH3, cfg.FastH3URL),
 		H3TurboURL:        Get(db, KeyH3Turbo, cfg.H3TurboURL),
 		H3PinkCherryURL:   Get(db, KeyH3PinkCherry, cfg.H3PinkCherryURL),
+		H3DirectorURL:     Get(db, KeyH3Director, cfg.H3DirectorURL),
 		LLaDAImageURL:     Get(db, KeyLLaDAImage, cfg.LLaDAImageURL),
+		ChatURL:           Get(db, KeyChatURL, cfg.ChatURL),
+		ChatModel:         Get(db, KeyChatModel, cfg.ChatModel),
+		ChatAPIToken:      chatMasked,
+		HasChatToken:      chatToken != "",
+		TTSURL:            Get(db, KeyTTSURL, cfg.TTSURL),
+		TTSModel:          Get(db, KeyTTSModel, cfg.TTSModel),
+		TTSVoice:          Get(db, KeyTTSVoice, cfg.TTSVoice),
+		TTSAPIToken:       ttsMasked,
+		HasTTSToken:       ttsToken != "",
 		AutoSwitchEngine:  boolPtr(parseBool(Get(db, KeyAutoSwitchEngine, boolString(cfg.AutoSwitchEngine)), cfg.AutoSwitchEngine)),
 		MaxLoadedEngines:  intPtr(max1(atoi(Get(db, KeyMaxLoadedEngines, strconv.Itoa(max1(cfg.MaxLoadedEngines)))))),
 	}
@@ -111,10 +147,16 @@ func Apply(db *gorm.DB, in models.SettingsPayload) error {
 		KeyFastH3:            strings.TrimRight(strings.TrimSpace(in.FastH3URL), "/"),
 		KeyH3Turbo:           strings.TrimRight(strings.TrimSpace(in.H3TurboURL), "/"),
 		KeyH3PinkCherry:      strings.TrimRight(strings.TrimSpace(in.H3PinkCherryURL), "/"),
+		KeyH3Director:        strings.TrimRight(strings.TrimSpace(in.H3DirectorURL), "/"),
 		KeyLLaDAImage:        strings.TrimRight(strings.TrimSpace(in.LLaDAImageURL), "/"),
+		KeyChatURL:           strings.TrimRight(strings.TrimSpace(in.ChatURL), "/"),
+		KeyChatModel:         strings.TrimSpace(in.ChatModel),
+		KeyTTSURL:            strings.TrimRight(strings.TrimSpace(in.TTSURL), "/"),
+		KeyTTSModel:          strings.TrimSpace(in.TTSModel),
+		KeyTTSVoice:          strings.TrimSpace(in.TTSVoice),
 	}
 	for k, v := range pairs {
-		if v == "" && k != KeyMiniMaxBase {
+		if v == "" && k != KeyMiniMaxBase && k != KeyChatModel && k != KeyChatURL && k != KeyTTSURL && k != KeyTTSModel && k != KeyTTSVoice {
 			continue
 		}
 		if err := Put(db, k, v); err != nil {
@@ -136,7 +178,25 @@ func Apply(db *gorm.DB, in models.SettingsPayload) error {
 			return err
 		}
 	}
+	if in.ChatAPIToken != "" && in.ChatAPIToken != "********" {
+		if err := Put(db, KeyChatToken, strings.TrimSpace(in.ChatAPIToken)); err != nil {
+			return err
+		}
+	}
+	if in.TTSAPIToken != "" && in.TTSAPIToken != "********" {
+		if err := Put(db, KeyTTSToken, strings.TrimSpace(in.TTSAPIToken)); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func ChatToken(db *gorm.DB, cfg config.Config) string {
+	return Get(db, KeyChatToken, cfg.ChatAPIToken)
+}
+
+func TTSToken(db *gorm.DB, cfg config.Config) string {
+	return Get(db, KeyTTSToken, cfg.TTSAPIToken)
 }
 
 func AllowRegister(db *gorm.DB, cfg config.Config) bool {

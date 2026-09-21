@@ -4,18 +4,20 @@ import "testing"
 
 func TestCanonicalEngine(t *testing.T) {
 	cases := map[string]string{
-		"h3":              EngineH3,
-		"h3-base":         EngineH3,
-		"fasth3":          EngineFastH3,
-		"h3-max":          EngineFastH3,
-		"h3-turbo":        EngineH3Turbo,
-		"h3-turbo-lora":   EngineH3Turbo,
-		"h3-ref2va-int8":       EngineH3Ref2VAInt8,
-		"ref2va-int8":          EngineH3Ref2VAInt8,
-		"h3-pinkcherry-int8":   EngineH3PinkCherryInt8,
-		"pinkcherry":           EngineH3PinkCherryInt8,
-		"llada-image":          EngineLLadaImage,
-		"llada":           EngineLLadaImage,
+		"h3":                 EngineH3,
+		"h3-base":            EngineH3,
+		"fasth3":             EngineFastH3,
+		"h3-max":             EngineFastH3,
+		"h3-turbo":           EngineH3Turbo,
+		"h3-turbo-lora":      EngineH3Turbo,
+		"h3-ref2va-int8":     EngineH3Ref2VAInt8,
+		"ref2va-int8":        EngineH3Ref2VAInt8,
+		"h3-pinkcherry-int8": EngineH3PinkCherryInt8,
+		"pinkcherry":         EngineH3PinkCherryInt8,
+		"h3-director":        EngineH3Director,
+		"timeline-director":  EngineH3Director,
+		"llada-image":        EngineLLadaImage,
+		"llada":              EngineLLadaImage,
 	}
 	for in, want := range cases {
 		if got := CanonicalEngine(in); got != want {
@@ -25,7 +27,7 @@ func TestCanonicalEngine(t *testing.T) {
 }
 
 func TestEngineAliasesIncludeCanonical(t *testing.T) {
-	for _, id := range []string{EngineH3, EngineFastH3, EngineH3Turbo, EngineH3Ref2VAInt8, EngineH3PinkCherryInt8, EngineLLadaImage} {
+	for _, id := range []string{EngineH3, EngineFastH3, EngineH3Turbo, EngineH3Ref2VAInt8, EngineH3PinkCherryInt8, EngineH3Director, EngineLLadaImage} {
 		found := false
 		for _, a := range EngineAliases(id) {
 			if a == id {
@@ -36,5 +38,23 @@ func TestEngineAliasesIncludeCanonical(t *testing.T) {
 		if !found {
 			t.Fatalf("EngineAliases(%q) missing canonical id", id)
 		}
+	}
+}
+
+func TestSupportsRef2VAAndFirstFrame(t *testing.T) {
+	if !SupportsRef2VA(EngineH3Ref2VAInt8) || !SupportsRef2VA(EngineH3Director) {
+		t.Fatal("ref2va engines")
+	}
+	if SupportsRef2VA(EngineH3) || SupportsRef2VA(EngineLLadaImage) {
+		t.Fatal("h3/llada should not advertise ref2va")
+	}
+	if !SupportsFirstFrame(EngineH3) || !SupportsFirstFrame(EngineH3Turbo) || !SupportsFirstFrame(EngineH3PinkCherryInt8) {
+		t.Fatal("first-frame engines")
+	}
+	if SupportsFirstFrame(EngineFastH3) || SupportsFirstFrame(EngineH3Ref2VAInt8) {
+		t.Fatal("fasth3/ref2va are not first-frame engines")
+	}
+	if !ContinueUsesLastFrame(EngineH3) || ContinueUsesLastFrame(EngineH3Ref2VAInt8) {
+		t.Fatal("last-frame continue")
 	}
 }

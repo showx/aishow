@@ -38,13 +38,13 @@
 2. 选模式：
    - **文生** `t2va`：只写镜头提示
    - **首帧 / 尾帧 / 首尾帧** `fl2va`：上传对应图片
-   - **参考生成** `ref2va`：参考图（最多 9 张），可选参考视频 / 音频。请用 H3 Ref2VA INT8
+   - **参考生成** `ref2va`：参考图（最多 9 张），可选参考视频 / 音频。请用 H3 Ref2VA INT8 或 H3 Timeline Director
 3. 写提示词。视频用镜头语言（主体、运动、光、声音、时间点）；点下方示例可先填一句再改
 4. 调时长、分辨率、画幅。24GB 单卡建议先从 **480p / 5 秒** 试一条
 5. 需要时展开「高级采样」改 Seed、步数、Flow Shift。勾选「H3-Context-IR」要先在推理节点填 MiniMax Token
 6. 点 **投入队列**。引擎离线时按钮会写成「投入队列（离线可用）」
 
-FastH3 只做文生。H3-Base / Turbo / PinkCherry 做文生和首尾帧。参考生成请换 Ref2VA。
+FastH3 只做文生。H3-Base / Turbo / PinkCherry 做文生和首尾帧。参考生成请换 Ref2VA 或 Timeline Director。Director 有 Latent Upscaler 时走 SelfLift 二采，可用来对照能不能更快出片；超过 15 秒会自动分段，最长 30 秒。
 
 ### 投一张图（LLaDA-Image）
 
@@ -89,9 +89,21 @@ FastH3 只做文生。H3-Base / Turbo / PinkCherry 做文生和首尾帧。参�
 - **填回 / 再生成 / 删除** 与队列相同
 - `mock` 模式下完成的任务没有真实文件，卡片上会标「模拟成品」
 
+## 短剧
+
+侧栏「短剧」是五步流水线：剧本 → 分镜（最多 8 镜）→ LLaDA 出图 → 本机 H3 成片 → ffmpeg 拼接。
+
+- **生成本地剧本 / 本地拆分镜 / 重写出图·成片·衔接**：走本机 Ollama 小模型，默认 `qwen3.5:4b`（`scripts\start_drama_chat.bat`）。不要选 `qwen3-vl`。不是 H3 / LLaDA。
+- **角色 / 场景参考**：剧本步上传人物或场景图，出图时并进 LLaDA 参考（LLaDA 只用第一张图，其余写进提示）。
+- 续写引擎选 H3 / Turbo / PinkCherry 时，会抽上一镜**尾帧**当本镜首帧；Ref2VA / Director 仍用上一镜成片续写。
+- 合成可勾选**烧录字幕**（对白）和**叠本地语音**（可选 OpenAI 兼容 TTS）。没配 TTS 就只用 H3 音轨。
+- `mock` 且 Chat 连不上时，会用模板文本把流程跑通。
+- 第 2 镜起续写成片用「将@视频1从最后一帧向后延长」，不要写成「参考视频1」。
+- 仍可全程手写剧本和分镜，不强制开 Chat。
+
 ## 推理节点
 
-管理员在这里切 `mock` / `auto`，填边车地址，以及是否自动切换模型。
+管理员在这里切 `mock` / `auto`，填边车地址、本地 Chat，以及是否自动切换模型。
 
 ![推理节点](screenshots/nodes.png)
 

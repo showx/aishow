@@ -50,7 +50,7 @@
       <div class="grid-2">
         <div class="field" v-if="!isLLada">
           <label>时长 {{ form.duration }}s</label>
-          <input v-model.number="form.duration" type="range" :min="minDuration" max="15" step="1" />
+          <input v-model.number="form.duration" type="range" :min="minDuration" :max="maxDuration" step="1" />
           <div class="seg ticks">
             <button v-for="d in visibleDurations" :key="d" :class="{ active: form.duration === d }" @click="form.duration = d">{{ d }}s</button>
           </div>
@@ -183,10 +183,11 @@ const engines = [
   { id: 'h3-turbo' as JobEngine, label: 'H3 Turbo LoRA' },
   { id: 'h3-pinkcherry-int8' as JobEngine, label: 'H3 PinkCherry INT8' },
   { id: 'h3-ref2va-int8' as JobEngine, label: 'H3 Ref2VA INT8' },
+  { id: 'h3-director' as JobEngine, label: 'H3 Timeline Director' },
   { id: 'fasth3' as JobEngine, label: 'FastH3 本地' },
   { id: 'llada-image' as JobEngine, label: 'LLaDA-Image' },
 ]
-const enginePref: JobEngine[] = ['fasth3', 'h3-turbo', 'h3-pinkcherry-int8', 'h3', 'h3-ref2va-int8', 'llada-image']
+const enginePref: JobEngine[] = ['fasth3', 'h3-turbo', 'h3-pinkcherry-int8', 'h3', 'h3-director', 'h3-ref2va-int8', 'llada-image']
 const userPickedEngine = ref(false)
 const autoPickedEngine = ref(false)
 const modes = [
@@ -203,6 +204,7 @@ const imageModes = [
 const ratios = ['16:9', '9:16', '1:1', '4:3', '21:9', 'auto']
 const imageRatios = ['1:1', '16:9', '9:16', '4:3', '3:4']
 const durations = [2, 5, 8, 10, 15]
+const directorDurations = [5, 8, 10, 15, 20, 30]
 const fastDurations = [5, 8, 10, 15]
 const fastResolutions = [
   { short: 480, label: '480p' },
@@ -246,6 +248,7 @@ const engineOnline = computed(() => {
     'h3-turbo': false,
     'h3-pinkcherry-int8': false,
     'h3-ref2va-int8': false,
+    'h3-director': false,
     'llada-image': false,
   }
   for (const ep of store.system?.endpoints || []) {
@@ -254,6 +257,7 @@ const engineOnline = computed(() => {
     if (name.includes('fasth3')) map.fasth3 = true
     else if (name.includes('llada')) map['llada-image'] = true
     else if (name.includes('pinkcherry')) map['h3-pinkcherry-int8'] = true
+    else if (name.includes('director') || name.includes('timeline')) map['h3-director'] = true
     else if (name.includes('ref2va')) map['h3-ref2va-int8'] = true
     else if (name.includes('turbo')) map['h3-turbo'] = true
     else if (name.includes('fl2va') || name.includes('h3-base')) map.h3 = true
@@ -291,25 +295,31 @@ const isFastH3 = computed(() => form.engine === 'fasth3' || form.engine === 'h3-
 const isH3Turbo = computed(() => form.engine === 'h3-turbo')
 const isRef2VAInt8 = computed(() => form.engine === 'h3-ref2va-int8')
 const isPinkCherry = computed(() => form.engine === 'h3-pinkcherry-int8')
+const isDirector = computed(() => form.engine === 'h3-director')
 const isLLada = computed(() => form.engine === 'llada-image')
 const visibleModes = computed(() => {
   if (isLLada.value) return imageModes
   if (isFastH3.value) return modes.filter(m => m.id === 't2va')
   if (isRef2VAInt8.value) return modes.filter(m => m.id === 'ref2va')
+  if (isDirector.value) return modes.filter(m => m.id === 't2va' || m.id === 'ref2va')
   return modes.filter(m => m.id !== 'ref2va')
 })
-const visibleDurations = computed(() => (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) ? [2, 5, 8, 10, 15] : durations)
+const visibleDurations = computed(() => {
+  if (isDirector.value) return directorDurations
+  return (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) ? [2, 5, 8, 10, 15] : durations
+})
 const visibleResolutions = computed(() => {
   if (isLLada.value) return imageResolutions
-  if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) return fastResolutions
+  if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value || isDirector.value) return fastResolutions
   return resolutionPresets
 })
 const visibleRatios = computed(() => {
   if (isLLada.value) return imageRatios
-  if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) return ratios.filter(r => r !== 'auto')
+  if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value || isDirector.value) return ratios.filter(r => r !== 'auto')
   return ratios
 })
 const minDuration = computed(() => 2)
+const maxDuration = computed(() => isDirector.value ? 30 : 15)
 const autoSwitch = computed(() => {
   if (store.settings?.auto_switch_engine !== undefined) return store.settings.auto_switch_engine
   if (store.system?.auto_switch_engine !== undefined) return store.system.auto_switch_engine
@@ -326,14 +336,16 @@ const engineHint = computed(() => {
   if (isFastH3.value) return `FastH3 GGUF Q4：只支持文生。${status}`
   if (isH3Turbo.value) return `H3 Turbo LoRA：NF4 底模 + lightx2v 4 步，文生 / 首尾帧。官方 Space 的未量化版约 72GB 显存，24GB 请用本仓库这条量化路径。${status}`
   if (isPinkCherry.value) return `PinkCherry INT8：独立边车 + 独立 ComfyUI :8189，权重在 H3_PINKCHERRY_ROOT，不和 FastH3 / Ref2VA 共用 8188。文生 / 首尾帧。${status}`
+  if (isDirector.value) return `Timeline Director：文生 / 参考生成。有 Latent Upscaler 时走 SelfLift 二采（约 75% 低清 + 25% 高清），用来试能不能更快出片。超过 15 秒会自动分段。${status}`
   if (isRef2VAInt8.value) return `Ref2VA INT8：参考生成，最多 9 张图。${status}`
-  return `H3-Base NF4：文生 / 首尾帧。参考生成请改选「H3 Ref2VA INT8」。${status}`
+  return `H3-Base NF4：文生 / 首尾帧。参考生成请改选「H3 Ref2VA INT8」或「H3 Timeline Director」。${status}`
 })
 const resolutionHint = computed(() => {
   if (isLLada.value) return '文生图边长需能被 16 整除；指令编辑需能被 32 整除。默认 1024。'
   if (isFastH3.value) return '训练分辨率是 768×1344 / 5 秒。24GB 建议先用 480p / 5 秒试一条。'
   if (isH3Turbo.value) return 'LoRA 按 768p 训练。24GB 先用 480p / 5 秒 / 4 步；768p 更吃显存。'
   if (isPinkCherry.value) return 'PinkCherry 独立 INT8。24GB 建议 480p / 5 秒 / 20 步，不要和 FastH3 / Ref2VA 同时加载。'
+  if (isDirector.value) return '二采时大部分步数在半分辨率跑。24GB 先用 480p / 5 秒 / 8 步对照原 Ref2VA。超过 15 秒会分段续写。'
   if (isRef2VAInt8.value) return 'INT8 24GB 建议 480p / 5 秒 / 20 步。768p 更吃显存。'
   return 'NF4 24GB 推荐 480p；720p / 1080p 更慢，也可能撑满显存。'
 })
@@ -377,6 +389,7 @@ function setMode(id: JobMode) {
   form.mode = id
   if (form.engine === 'h3-ref2va-int8' && form.steps === 50) form.steps = 20
   if (form.engine === 'h3-pinkcherry-int8' && form.steps === 50) form.steps = 20
+  if (form.engine === 'h3-director' && (form.steps === 50 || form.steps === 20)) form.steps = 8
   if (form.engine === 'h3-turbo' && (form.steps === 50 || form.steps === 0)) form.steps = 4
 }
 
@@ -401,6 +414,7 @@ function setEngine(id: JobEngine) {
     form.quality = 'turbo'
     form.short_edge = form.short_edge >= 640 ? 768 : 480
     if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
+    if (form.duration > 15) form.duration = 15
     return
   }
   if (id === 'h3-ref2va-int8') {
@@ -408,6 +422,15 @@ function setEngine(id: JobEngine) {
     form.steps = 20
     form.short_edge = form.short_edge >= 640 ? 768 : 480
     if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
+    if (form.duration > 15) form.duration = 15
+    return
+  }
+  if (id === 'h3-director') {
+    if (form.mode !== 't2va' && form.mode !== 'ref2va') form.mode = 't2va'
+    form.steps = 8
+    form.short_edge = form.short_edge >= 640 ? 768 : 480
+    if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
+    if (form.duration > 30) form.duration = 30
     return
   }
   if (id === 'h3-pinkcherry-int8') {
@@ -415,17 +438,20 @@ function setEngine(id: JobEngine) {
     form.steps = 20
     form.short_edge = form.short_edge >= 640 ? 768 : 480
     if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
+    if (form.duration > 15) form.duration = 15
     return
   }
   if (id === 'h3') {
     if (form.mode === 'ref2va') form.mode = 't2va'
-    if (form.steps === 20) form.steps = 50
+    if (form.steps === 20 || form.steps === 8) form.steps = 50
+    if (form.duration > 15) form.duration = 15
   }
   if (id === 'fasth3' || id === 'h3-max') {
     form.mode = 't2va'
     form.steps = 4
     form.short_edge = form.short_edge >= 640 ? 768 : 480
     if (form.aspect_ratio === 'auto') form.aspect_ratio = '16:9'
+    if (form.duration > 15) form.duration = 15
   }
 }
 
@@ -632,7 +658,11 @@ async function submit() {
     return
   }
   if ((form.engine === 'h3' || form.engine === 'h3-turbo' || form.engine === 'h3-pinkcherry-int8') && form.mode === 'ref2va') {
-    store.flash('参考生成请改选「H3 Ref2VA INT8」')
+    store.flash('参考生成请改选「H3 Ref2VA INT8」或「H3 Timeline Director」')
+    return
+  }
+  if (form.engine === 'h3-director' && form.mode !== 't2va' && form.mode !== 'ref2va') {
+    store.flash('H3 Timeline Director 只支持文生和参考生成')
     return
   }
   busy.value = true

@@ -53,6 +53,7 @@ func Open(cfg config.Config) (*gorm.DB, error) {
 		&models.Upload{},
 		&models.Setting{},
 		&models.JobEvent{},
+		&models.DramaProject{},
 	); err != nil {
 		return nil, err
 	}

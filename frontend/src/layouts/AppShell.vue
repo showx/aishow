@@ -100,6 +100,7 @@ let es: EventSource | null = null
 const map: Record<string, { title: string; kicker: string }> = {
   dashboard: { title: '指挥台', kicker: 'Command' },
   studio: { title: '生成工坊', kicker: '离线也能排队' },
+  drama: { title: '短剧工坊', kicker: '剧本到成片' },
   queue: { title: '任务队列', kicker: 'Queue' },
   gallery: { title: '作品库', kicker: 'Gallery' },
   nodes: { title: '推理节点', kicker: 'Nodes' },
@@ -123,6 +124,7 @@ const items = computed(() => {
   const all = [
     { to: '/', label: '指挥台', icon: '⌘', badge: '' },
     { to: '/studio', label: '生成工坊', icon: '✦', badge: '' },
+    { to: '/drama', label: '短剧', icon: '▤', badge: '' },
     { to: '/queue', label: '任务队列', icon: '☰', badge: String((store.system?.queue_depth || 0) + (store.system?.running || 0) || '') },
     { to: '/gallery', label: '作品库', icon: '▣', badge: '' },
     { to: '/nodes', label: '推理节点', icon: '◎', badge: '' },

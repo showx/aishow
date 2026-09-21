@@ -25,6 +25,9 @@ if defined COMFY_ROOT if not defined FASTH3_COMFY_OUTPUT set "FASTH3_COMFY_OUTPU
 if defined COMFY_ROOT if not defined H3_REF2VA_COMFY_ROOT set "H3_REF2VA_COMFY_ROOT=%COMFY_ROOT%\ComfyUI"
 if defined COMFY_ROOT if not defined H3_REF2VA_COMFY_OUTPUT set "H3_REF2VA_COMFY_OUTPUT=%COMFY_ROOT%\ComfyUI\output"
 if defined COMFY_ROOT if not defined H3_REF2VA_COMFY_INPUT set "H3_REF2VA_COMFY_INPUT=%COMFY_ROOT%\ComfyUI\input"
+if defined COMFY_ROOT if not defined H3_DIRECTOR_COMFY_ROOT set "H3_DIRECTOR_COMFY_ROOT=%COMFY_ROOT%\ComfyUI"
+if defined COMFY_ROOT if not defined H3_DIRECTOR_COMFY_OUTPUT set "H3_DIRECTOR_COMFY_OUTPUT=%COMFY_ROOT%\ComfyUI\output"
+if defined COMFY_ROOT if not defined H3_DIRECTOR_COMFY_INPUT set "H3_DIRECTOR_COMFY_INPUT=%COMFY_ROOT%\ComfyUI\input"
 if defined COMFY_ROOT if not defined H3_PINKCHERRY_COMFY_ROOT set "H3_PINKCHERRY_COMFY_ROOT=%COMFY_ROOT%\ComfyUI"
 
 if defined MODELS_ROOT if not defined FASTH3_GGUF_ROOT set "FASTH3_GGUF_ROOT=%MODELS_ROOT%\fasth3-gguf"
@@ -36,6 +39,7 @@ if defined MODELS_ROOT if not defined FASTH3_LOCAL_DIR if exist "%MODELS_ROOT%\F
 if not defined FASTH3_OUT_DIR set "FASTH3_OUT_DIR=%AISHOW_ROOT%\backend\data\sidecar-out\fasth3"
 if not defined H3_PINKCHERRY_OUT_DIR set "H3_PINKCHERRY_OUT_DIR=%AISHOW_ROOT%\backend\data\sidecar-out\pinkcherry"
 if not defined H3_REF2VA_OUT_DIR set "H3_REF2VA_OUT_DIR=%FASTH3_OUT_DIR%"
+if not defined H3_DIRECTOR_OUT_DIR set "H3_DIRECTOR_OUT_DIR=%FASTH3_OUT_DIR%"
 
 if defined AISHOW_TMP if not defined TEMP set "TEMP=%AISHOW_TMP%"
 if defined AISHOW_TMP if not defined TMP set "TMP=%AISHOW_TMP%"
@@ -54,3 +58,5 @@ if defined COMFY_ROOT if defined FASTH3_GGUF_ROOT if not defined FASTH3_CLIP_DIR
 if defined FASTH3_GGUF_ROOT if not defined FASTH3_CLIP_DIRS set "FASTH3_CLIP_DIRS=%FASTH3_GGUF_ROOT%\text_encoders"
 if defined COMFY_ROOT if defined FASTH3_GGUF_ROOT if not defined H3_REF2VA_CLIP_DIRS set "H3_REF2VA_CLIP_DIRS=%FASTH3_GGUF_ROOT%\text_encoders;%COMFY_ROOT%\ComfyUI\models\text_encoders"
 if defined FASTH3_GGUF_ROOT if not defined H3_REF2VA_CLIP_DIRS set "H3_REF2VA_CLIP_DIRS=%FASTH3_GGUF_ROOT%\text_encoders"
+if defined COMFY_ROOT if defined FASTH3_GGUF_ROOT if not defined H3_DIRECTOR_CLIP_DIRS set "H3_DIRECTOR_CLIP_DIRS=%FASTH3_GGUF_ROOT%\text_encoders;%COMFY_ROOT%\ComfyUI\models\text_encoders"
+if defined FASTH3_GGUF_ROOT if not defined H3_DIRECTOR_CLIP_DIRS set "H3_DIRECTOR_CLIP_DIRS=%FASTH3_GGUF_ROOT%\text_encoders"

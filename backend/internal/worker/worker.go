@@ -22,16 +22,19 @@ import (
 	"gorm.io/gorm"
 )
 
+type AfterFinishFunc func(job *models.Job)
+
 type Worker struct {
-	cfg        config.Config
-	db         *gorm.DB
-	queue      *queue.Service
-	store      *storage.Store
-	sglang     *sglang.Client
-	minimax    *minimax.Client
-	llada      *llada.Client
-	orch       *orchestrator.Manager
-	lastEngine string
+	cfg         config.Config
+	db          *gorm.DB
+	queue       *queue.Service
+	store       *storage.Store
+	sglang      *sglang.Client
+	minimax     *minimax.Client
+	llada       *llada.Client
+	orch        *orchestrator.Manager
+	lastEngine  string
+	afterFinish AfterFinishFunc
 }
 
 func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store, orch *orchestrator.Manager) *Worker {
@@ -45,6 +48,21 @@ func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store,
 		llada:   llada.New(),
 		orch:    orch,
 	}
+}
+
+func (w *Worker) SetAfterFinish(fn AfterFinishFunc) {
+	w.afterFinish = fn
+}
+
+func (w *Worker) notifyDone(job *models.Job) {
+	if w.afterFinish == nil || job == nil || job.DramaID == "" {
+		return
+	}
+	var fresh models.Job
+	if err := w.db.First(&fresh, "id = ?", job.ID).Error; err != nil {
+		return
+	}
+	go w.afterFinish(&fresh)
 }
 
 func (w *Worker) Start() {
@@ -104,7 +122,10 @@ func (w *Worker) resumeActive() {
 				}
 				w.queue.Log(job.ID, "error", err.Error())
 				_ = w.queue.Finish(&job, models.StatusFailed, "失败", err.Error(), "", 0, false)
+				w.notifyDone(&job)
+				return
 			}
+			w.notifyDone(&job)
 		}()
 	}
 }
@@ -127,8 +148,10 @@ func (w *Worker) loop(id, slots int) {
 			}
 			w.queue.Log(job.ID, "error", err.Error())
 			_ = w.queue.Finish(job, models.StatusFailed, "失败", err.Error(), "", 0, false)
+			w.notifyDone(job)
 			continue
 		}
+		w.notifyDone(job)
 	}
 }
 
@@ -209,6 +232,9 @@ func (w *Worker) process(job *models.Job) error {
 	if models.IsH3Ref2VAInt8(job.Engine) {
 		task = "ref2va"
 		endpoint = snap.SGLANGRef2VAURL
+	}
+	if models.IsH3Director(job.Engine) {
+		endpoint = snap.H3DirectorURL
 	}
 
 	req := sglang.VideoRequest{
@@ -651,6 +677,9 @@ func jobEndpoint(job *models.Job, snap models.SettingsPayload) string {
 	}
 	if models.IsH3PinkCherryInt8(job.Engine) {
 		return snap.H3PinkCherryURL
+	}
+	if models.IsH3Director(job.Engine) {
+		return snap.H3DirectorURL
 	}
 	if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
 		return snap.SGLANGRef2VAURL

@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"aishow/internal/chat"
 	"aishow/internal/config"
 	"aishow/internal/hub"
 	"aishow/internal/llada"
@@ -20,6 +21,7 @@ import (
 	"aishow/internal/settings"
 	"aishow/internal/sglang"
 	"aishow/internal/storage"
+	"aishow/internal/tts"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -37,10 +39,12 @@ type Server struct {
 	ll    *llada.Client
 	hw    *metrics.Collector
 	orch  *orchestrator.Manager
+	chat  *chat.Client
+	tts   *tts.Client
 }
 
 func New(cfg config.Config, db *gorm.DB, q *queue.Service, store *storage.Store, h *hub.Hub, hw *metrics.Collector, orch *orchestrator.Manager) *Server {
-	return &Server{cfg: cfg, db: db, queue: q, store: store, hub: h, sg: sglang.New(), ll: llada.New(), hw: hw, orch: orch}
+	return &Server{cfg: cfg, db: db, queue: q, store: store, hub: h, sg: sglang.New(), ll: llada.New(), hw: hw, orch: orch, chat: chat.New(), tts: tts.New()}
 }
 
 func (s *Server) Router() *gin.Engine {
@@ -91,6 +95,22 @@ func (s *Server) Router() *gin.Engine {
 			authed.GET("/jobs/:id/video", s.jobVideo)
 			authed.GET("/jobs/:id/image", s.jobImage)
 			authed.GET("/jobs/:id/events", s.jobEvents)
+
+			authed.GET("/drama-projects", s.listDramaProjects)
+			authed.POST("/drama-projects", s.createDramaProject)
+			authed.GET("/drama-projects/:id", s.getDramaProject)
+			authed.PATCH("/drama-projects/:id", s.patchDramaProject)
+			authed.DELETE("/drama-projects/:id", s.deleteDramaProject)
+			authed.POST("/drama-projects/:id/storyboard", s.runDramaStoryboard)
+			authed.POST("/drama-projects/:id/write", s.runDramaWrite)
+			authed.POST("/drama-projects/:id/shots/:index/rewrite", s.rewriteDramaShot)
+			authed.GET("/chat/models", s.listChatModels)
+			authed.POST("/drama-projects/:id/images", s.runDramaImages)
+			authed.POST("/drama-projects/:id/images/:index/retry", s.retryDramaImage)
+			authed.POST("/drama-projects/:id/videos", s.runDramaVideos)
+			authed.POST("/drama-projects/:id/videos/:index/retry", s.retryDramaVideo)
+			authed.POST("/drama-projects/:id/compile", s.runDramaCompile)
+			authed.GET("/drama-projects/:id/video", s.dramaCompileVideo)
 
 			admin := authed.Group("")
 			admin.Use(s.requireAdmin)
@@ -150,8 +170,11 @@ func (s *Server) system(c *gin.Context) {
 	tb := inspect(snap.H3TurboURL)
 	pc := inspect(snap.H3PinkCherryURL)
 	rf := inspect(snap.SGLANGRef2VAURL)
+	dr := inspect(snap.H3DirectorURL)
 	fh := inspect(snap.FastH3URL)
 	ll := inspect(snap.LLaDAImageURL)
+	ch := s.chat.Inspect(snap.ChatURL, settings.ChatToken(s.db, s.cfg))
+	tt := s.tts.Inspect(snap.TTSURL, settings.TTSToken(s.db, s.cfg))
 	endpoint := func(name, url string, h models.SidecarHealth) models.EndpointHealth {
 		return models.EndpointHealth{
 			Name:             name,
@@ -168,8 +191,11 @@ func (s *Server) system(c *gin.Context) {
 		endpoint("H3 Turbo LoRA", snap.H3TurboURL, tb),
 		endpoint("H3 PinkCherry INT8", snap.H3PinkCherryURL, pc),
 		endpoint("H3 Ref2VA INT8", snap.SGLANGRef2VAURL, rf),
+		endpoint("H3 Timeline Director", snap.H3DirectorURL, dr),
 		endpoint("FastH3 · GGUF", snap.FastH3URL, fh),
 		endpoint("LLaDA-Image", snap.LLaDAImageURL, ll),
+		endpoint("本地 Chat", snap.ChatURL, ch),
+		endpoint("本地 TTS", snap.TTSURL, tt),
 	}
 	st.Hardware = s.hw.Snapshot()
 	if snap.AutoSwitchEngine != nil {
@@ -299,221 +325,6 @@ func (s *Server) mediaFile(c *gin.Context) {
 	c.File(path)
 }
 
-func (s *Server) createJob(c *gin.Context) {
-	var in models.CreateJobRequest
-	if err := c.ShouldBindJSON(&in); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	mode := strings.ToLower(strings.TrimSpace(in.Mode))
-	if !validMode(mode) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的生成模式"})
-		return
-	}
-	engine := normalizeEngine(in.Engine)
-	if engine == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的生成引擎"})
-		return
-	}
-	if models.IsFastH3(engine) && mode != models.ModeT2VA {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "本地 FastH3 Preview 只支持文生影像"})
-		return
-	}
-	if models.IsH3Ref2VAInt8(engine) && mode != models.ModeRef2VA {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "H3 Ref2VA INT8 只支持参考生成"})
-		return
-	}
-	if models.IsH3PinkCherryInt8(engine) && mode == models.ModeRef2VA {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "PinkCherry INT8 只承接文生和首尾帧；参考生成请改选「H3 Ref2VA INT8」"})
-		return
-	}
-	if (engine == models.EngineH3 || models.IsH3Turbo(engine)) && mode == models.ModeRef2VA {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参考生成请改选「H3 Ref2VA INT8」；H3-Base / Turbo LoRA 只承接文生和首尾帧"})
-		return
-	}
-	if models.IsImageEngine(engine) && !models.IsImageMode(mode) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "LLaDA-Image 仅支持文生图与指令编辑"})
-		return
-	}
-	if !models.IsImageEngine(engine) && models.IsImageMode(mode) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "文生图 / 指令编辑请选择 LLaDA-Image"})
-		return
-	}
-	if strings.TrimSpace(in.Prompt) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请填写提示词"})
-		return
-	}
-	if models.IsImageEngine(engine) {
-		in.Duration = 0
-		in.EnhancePrompt = false
-		if in.Quality == "" {
-			in.Quality = "turbo"
-		}
-		if in.ShortEdge <= 0 {
-			in.ShortEdge = 1024
-		}
-		if in.ShortEdge < 512 {
-			in.ShortEdge = 512
-		}
-		if in.ShortEdge > 1536 {
-			in.ShortEdge = 1536
-		}
-		if in.AspectRatio == "" || in.AspectRatio == "auto" {
-			in.AspectRatio = "1:1"
-		}
-		if in.Steps == 0 {
-			if strings.EqualFold(in.Quality, "base") {
-				in.Steps = 50
-			} else {
-				in.Steps = 4
-			}
-		}
-		if in.FlowShift == 0 {
-			if strings.EqualFold(in.Quality, "base") {
-				in.FlowShift = 5
-			} else {
-				in.FlowShift = 1
-			}
-		}
-	} else {
-		if in.Duration <= 0 {
-			in.Duration = 5
-		} else if in.Duration < 2 {
-			in.Duration = 2
-		}
-		if in.Duration > 15 {
-			in.Duration = 15
-		}
-		if in.ShortEdge <= 0 {
-			in.ShortEdge = 480
-		}
-		if models.IsFastH3(engine) {
-			if in.ShortEdge >= 640 {
-				in.ShortEdge = 768
-			} else {
-				in.ShortEdge = 480
-			}
-			in.Steps = 5
-		}
-		if models.IsH3Turbo(engine) {
-			if in.ShortEdge >= 640 {
-				in.ShortEdge = 768
-			} else {
-				in.ShortEdge = 480
-			}
-			if in.Steps == 0 || in.Steps == 50 {
-				in.Steps = 4
-			}
-			if in.Steps < 4 {
-				in.Steps = 4
-			}
-			if in.Steps > 8 {
-				in.Steps = 8
-			}
-			if in.FlowShift == 0 || in.FlowShift == 12 {
-				in.FlowShift = 6
-			}
-			if in.Quality == "" || in.Quality == "lossless" {
-				in.Quality = "turbo"
-			}
-		}
-		if models.IsH3Ref2VAInt8(engine) && (in.Steps == 0 || in.Steps == 50) {
-			in.Steps = 20
-		}
-		if models.IsH3PinkCherryInt8(engine) {
-			if in.ShortEdge >= 640 {
-				in.ShortEdge = 768
-			} else {
-				in.ShortEdge = 480
-			}
-			if in.Steps == 0 || in.Steps == 50 {
-				in.Steps = 20
-			}
-			if in.Steps < 8 {
-				in.Steps = 8
-			}
-			if in.Steps > 50 {
-				in.Steps = 50
-			}
-		}
-		if in.ShortEdge < 256 {
-			in.ShortEdge = 256
-		}
-		if in.ShortEdge > 1080 {
-			in.ShortEdge = 1080
-		}
-		if in.AspectRatio == "" {
-			in.AspectRatio = "16:9"
-		}
-		if (models.IsFastH3(engine) || models.IsH3Turbo(engine) || models.IsH3PinkCherryInt8(engine)) && in.AspectRatio == "auto" {
-			in.AspectRatio = "16:9"
-		}
-		if in.Steps == 0 {
-			in.Steps = 50
-		}
-		if in.FlowShift == 0 {
-			in.FlowShift = 12
-		}
-	}
-	if in.AudioFlowShift == 0 {
-		in.AudioFlowShift = 3
-	}
-	if in.Quality == "" {
-		in.Quality = "lossless"
-	}
-	if in.Outputs < 1 {
-		in.Outputs = 1
-	}
-	seed := time.Now().Unix() % 100000
-	if in.Seed != nil {
-		seed = *in.Seed
-	}
-	title := strings.TrimSpace(in.Title)
-	if title == "" {
-		title = clipRunes(in.Prompt, 18)
-	}
-	textID, textLabel := models.DescribeTextEncoder(engine, "")
-	job := models.Job{
-		ID:               uuid.NewString(),
-		UserID:           currentUserID(c),
-		Title:            title,
-		Mode:             mode,
-		Engine:           engine,
-		Status:           models.StatusQueued,
-		Priority:         in.Priority,
-		Prompt:           in.Prompt,
-		TextEncoder:      textID,
-		TextEncoderLabel: textLabel,
-		PromptRewriter:   models.PromptRewriterFor(engine, in.EnhancePrompt),
-		Duration:         in.Duration,
-		AspectRatio:      in.AspectRatio,
-		ShortEdge:        in.ShortEdge,
-		Seed:             seed,
-		Steps:            in.Steps,
-		FlowShift:        in.FlowShift,
-		AudioFlowShift:   in.AudioFlowShift,
-		Quality:          in.Quality,
-		EnhancePrompt:    in.EnhancePrompt,
-		Outputs:          in.Outputs,
-		Stage:            "排队中",
-		CreatedAt:        time.Now(),
-		UpdatedAt:        time.Now(),
-	}
-	assets, err := s.buildAssets(job.ID, currentUserID(c), mode, in.Conditions)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	job.Assets = assets
-	if err := s.queue.Enqueue(&job); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	s.queue.Log(job.ID, "info", "任务已进入队列")
-	job.QueuePosition = s.queue.Position(job)
-	c.JSON(http.StatusOK, job)
-}
-
 func (s *Server) buildAssets(jobID, userID, mode string, conds []models.AssetCondition) ([]models.JobAsset, error) {
 	var assets []models.JobAsset
 	for _, cnd := range conds {
@@ -626,7 +437,10 @@ func (s *Server) stopRemote(job *models.Job) {
 	if models.IsH3PinkCherryInt8(job.Engine) {
 		endpoint = snap.H3PinkCherryURL
 	}
-	if models.IsH3Ref2VAInt8(job.Engine) || job.Mode == models.ModeRef2VA {
+	if models.IsH3Director(job.Engine) {
+		endpoint = snap.H3DirectorURL
+	}
+	if models.IsH3Ref2VAInt8(job.Engine) || (job.Mode == models.ModeRef2VA && !models.IsH3Director(job.Engine)) {
 		endpoint = snap.SGLANGRef2VAURL
 	}
 	if err := s.sg.Cancel(endpoint, job.RemoteID); err != nil {
@@ -780,6 +594,8 @@ func normalizeEngine(raw string) string {
 		return models.EngineH3Ref2VAInt8
 	case models.EngineH3PinkCherryInt8, "pinkcherry", "pinkcherry-int8", "h3-pinkcherry", "h3_pinkcherry_int8":
 		return models.EngineH3PinkCherryInt8
+	case models.EngineH3Director, "h3-timeline-director", "timeline-director", "director":
+		return models.EngineH3Director
 	case models.EngineLLadaImage, "llada", "llada_image", "lladaimage":
 		return models.EngineLLadaImage
 	default:

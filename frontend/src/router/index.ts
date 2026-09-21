@@ -17,6 +17,7 @@ const router = createRouter({
       children: [
         { path: '', name: 'dashboard', component: () => import('../views/DashboardView.vue') },
         { path: 'studio', name: 'studio', component: () => import('../views/StudioView.vue') },
+        { path: 'drama', name: 'drama', component: () => import('../views/DramaView.vue') },
         { path: 'queue', name: 'queue', component: () => import('../views/QueueView.vue') },
         { path: 'gallery', name: 'gallery', component: () => import('../views/GalleryView.vue') },
         { path: 'nodes', name: 'nodes', component: () => import('../views/NodesView.vue') },

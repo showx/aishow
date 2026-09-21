@@ -32,6 +32,7 @@ copy scripts\paths.example.bat scripts\paths.bat
 | H3 Turbo LoRA | 24GB 可跑 | 文生 / 首尾帧，4 步 | `download_h3_turbo_lora.ps1` | `start_h3_turbo_lora.bat` | `30012` |
 | H3 PinkCherry INT8 | 24GB 可跑 | 文生 / 首尾帧 | `download_h3_pinkcherry_int8.ps1` | `start_h3_pinkcherry_int8.bat` | `30013` / Comfy `8189` |
 | H3 Ref2VA INT8 | 24GB 可跑 | 参考生成 | `download_h3_ref2va.ps1` | `start_h3_ref2va_int8.bat` | `30011` / Comfy `8188` |
+| H3 Timeline Director | 24GB 可跑 | 文生 / 参考，SelfLift 二采 | `download_h3_latent_upscaler.ps1` | `start_h3_director.bat` | `30014` / Comfy `8188` |
 | FastH3 GGUF Q4 | 24GB 推荐 | 仅文生，4 步 | `download_fasth3_gguf.ps1` | `start_fasth3_gguf.bat` | `8000` / Comfy `8188` |
 | LLaDA-Image | 视 Turbo / Base | 文生图 / 指令编辑 | 见下方 | `start_llada_image.bat` | `30020` |
 | FastH3 全量 bf16 | 远超 24GB | 仅文生 | `download_fasth3.ps1` | `start_fasth3.bat` | `8000` |
@@ -57,11 +58,22 @@ scripts\start_fasth3_gguf.bat
 
 本地 H3 输出短边 768、24fps、32kHz 立体声。2K 再生仍走官方 H3-Regenerate-2K，未进默认队列。
 
+## Timeline Director（SelfLift 二采）
+
+用来对照「能不能更快出片」。边车提交 [ComfyUI-MiniMaxH3-TimelineDirector](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector) 的素材规划台 + 有限分段采样。有 H3 Latent Upscaler 时，约 `75%` 步数在半分辨率跑，再 latent 抬清做剩余高清步。作者实测 `1536×832 / 29 秒` 大约 10 分钟，本机 24GB 请先用 `480p / 5 秒 / 8 步` 和原来的 Ref2VA 20 步对照。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\download_h3_latent_upscaler.ps1
+scripts\start_h3_director.bat
+```
+
+启动脚本会把插件克隆进 `ComfyUI/custom_nodes`。没有 Upscaler 也能跑，只是不会开二采。文生和参考生成都能走这套图；超过 15 秒自动分段续写，最长 30 秒。和 FastH3 / Ref2VA 共用 ComfyUI `8188`。
+
 ## 不要混用的两套 ComfyUI
 
 PinkCherry 是独立一套：自己的权重目录 `H3_PINKCHERRY_ROOT` + ComfyUI **8189** + 边车 **30013**。
 
-FastH3 GGUF 和 Ref2VA INT8 共用另一套：权重在 `FASTH3_GGUF_ROOT`，ComfyUI **8188**。
+FastH3 GGUF、Ref2VA INT8 和 Timeline Director 共用另一套：权重在 `FASTH3_GGUF_ROOT`，ComfyUI **8188**。Director 还会把 [TimelineDirector](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector) 克隆进 `custom_nodes`，并读取 `models/latent_upscale_models/` 里的 H3 Latent Upscaler 做二采。
 
 不要把 PinkCherry 文件丢进 `fasth3-gguf`，也不要两套抢同一个 8188。
 

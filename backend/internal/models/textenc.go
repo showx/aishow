@@ -89,7 +89,7 @@ func DescribeTextEncoder(engine, filename string) (id, label string) {
 		return name, "LLaDA-Image 6B"
 	}
 	switch CanonicalEngine(engine) {
-	case EngineFastH3, EngineH3Ref2VAInt8:
+	case EngineFastH3, EngineH3Ref2VAInt8, EngineH3Director:
 		if name == "" {
 			return "qwen3vl-32b", "Qwen3-VL 32B 量化"
 		}

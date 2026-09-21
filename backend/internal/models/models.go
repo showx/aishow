@@ -26,10 +26,34 @@ const (
 	EngineH3Turbo          = "h3-turbo"
 	EngineH3Ref2VAInt8     = "h3-ref2va-int8"
 	EngineH3PinkCherryInt8 = "h3-pinkcherry-int8"
+	EngineH3Director       = "h3-director"
 	EngineLLadaImage       = "llada-image"
 
 	RoleAdmin = "admin"
 	RoleUser  = "user"
+
+	DramaStepWrite      = "write"
+	DramaStepStoryboard = "storyboard"
+	DramaStepImage      = "image"
+	DramaStepVideo      = "video"
+	DramaStepCompile    = "compile"
+
+	DramaStatusDraft      = "draft"
+	DramaStatusWriting    = "writing"
+	DramaStatusStoryboard = "storyboard"
+	DramaStatusImaging    = "imaging"
+	DramaStatusVideoing   = "videoing"
+	DramaStatusCompiling  = "compiling"
+	DramaStatusDone       = "done"
+	DramaStatusFailed     = "failed"
+
+	DramaKindImage   = "image"
+	DramaKindVideo   = "video"
+	DramaKindCompile = "compile"
+
+	DramaMaxShots     = 8
+	DramaMaxBeats     = 8
+	DramaMaxImageRefs = 16
 )
 
 type User struct {
@@ -93,6 +117,9 @@ type Job struct {
 	FinishedAt       *time.Time `json:"finished_at"`
 	Assets           []JobAsset `gorm:"foreignKey:JobID" json:"assets"`
 	Events           []JobEvent `gorm:"foreignKey:JobID" json:"events,omitempty"`
+	DramaID          string     `gorm:"size:36;index" json:"drama_id,omitempty"`
+	DramaShotIndex   int        `json:"drama_shot_index,omitempty"`
+	DramaKind        string     `gorm:"size:16" json:"drama_kind,omitempty"`
 }
 
 type JobAsset struct {
@@ -148,6 +175,9 @@ type CreateJobRequest struct {
 	Outputs        int              `json:"outputs"`
 	Priority       int              `json:"priority"`
 	Conditions     []AssetCondition `json:"conditions"`
+	DramaID        string           `json:"drama_id"`
+	DramaShotIndex int              `json:"drama_shot_index"`
+	DramaKind      string           `json:"drama_kind"`
 }
 
 type AssetCondition struct {
@@ -159,22 +189,33 @@ type AssetCondition struct {
 }
 
 type SettingsPayload struct {
-	InferenceMode     string `json:"inference_mode"`
-	SGLANGFL2VAURL    string `json:"sglang_fl2va_url"`
-	SGLANGRef2VAURL   string `json:"sglang_ref2va_url"`
-	MediaFilePrefix   string `json:"media_file_prefix"`
-	URIMode           string `json:"uri_mode"`
-	WorkerConcurrency int    `json:"worker_concurrency"`
-	PublicBaseURL     string `json:"public_base_url"`
-	MiniMaxAPIBase    string `json:"minimax_api_base"`
-	MiniMaxAPIToken   string `json:"minimax_api_token"`
-	HasMiniMaxToken   bool   `json:"has_minimax_token"`
-	FastH3URL         string `json:"fasth3_url"`
-	H3TurboURL        string `json:"h3_turbo_url"`
-	H3PinkCherryURL   string `json:"h3_pinkcherry_url"`
-	LLaDAImageURL     string `json:"llada_image_url"`
-	AutoSwitchEngine  *bool  `json:"auto_switch_engine,omitempty"`
-	MaxLoadedEngines  *int   `json:"max_loaded_engines,omitempty"`
+	InferenceMode     string   `json:"inference_mode"`
+	SGLANGFL2VAURL    string   `json:"sglang_fl2va_url"`
+	SGLANGRef2VAURL   string   `json:"sglang_ref2va_url"`
+	MediaFilePrefix   string   `json:"media_file_prefix"`
+	URIMode           string   `json:"uri_mode"`
+	WorkerConcurrency int      `json:"worker_concurrency"`
+	PublicBaseURL     string   `json:"public_base_url"`
+	MiniMaxAPIBase    string   `json:"minimax_api_base"`
+	MiniMaxAPIToken   string   `json:"minimax_api_token"`
+	HasMiniMaxToken   bool     `json:"has_minimax_token"`
+	FastH3URL         string   `json:"fasth3_url"`
+	H3TurboURL        string   `json:"h3_turbo_url"`
+	H3PinkCherryURL   string   `json:"h3_pinkcherry_url"`
+	H3DirectorURL     string   `json:"h3_director_url"`
+	LLaDAImageURL     string   `json:"llada_image_url"`
+	ChatURL           string   `json:"chat_url"`
+	ChatModel         string   `json:"chat_model"`
+	ChatAPIToken      string   `json:"chat_api_token"`
+	HasChatToken      bool     `json:"has_chat_token"`
+	ChatModels        []string `json:"chat_models,omitempty"`
+	TTSURL            string   `json:"tts_url"`
+	TTSModel          string   `json:"tts_model"`
+	TTSVoice          string   `json:"tts_voice"`
+	TTSAPIToken       string   `json:"tts_api_token"`
+	HasTTSToken       bool     `json:"has_tts_token"`
+	AutoSwitchEngine  *bool    `json:"auto_switch_engine,omitempty"`
+	MaxLoadedEngines  *int     `json:"max_loaded_engines,omitempty"`
 }
 
 type SystemStatus struct {
@@ -237,6 +278,8 @@ func CanonicalEngine(engine string) string {
 		return EngineH3Ref2VAInt8
 	case IsH3PinkCherryInt8(engine):
 		return EngineH3PinkCherryInt8
+	case IsH3Director(engine):
+		return EngineH3Director
 	case IsImageEngine(engine):
 		return EngineLLadaImage
 	default:
@@ -254,6 +297,8 @@ func EngineAliases(engine string) []string {
 		return []string{EngineH3Ref2VAInt8, "h3-ref2va", "ref2va-int8", "h3_ref2va_int8"}
 	case EngineH3PinkCherryInt8:
 		return []string{EngineH3PinkCherryInt8, "pinkcherry", "pinkcherry-int8", "h3-pinkcherry", "h3_pinkcherry_int8"}
+	case EngineH3Director:
+		return []string{EngineH3Director, "h3-timeline-director", "timeline-director", "director"}
 	case EngineLLadaImage:
 		return []string{EngineLLadaImage, "llada", "llada_image"}
 	default:
@@ -271,6 +316,8 @@ func EngineLabel(engine string) string {
 		return "H3 Ref2VA INT8"
 	case EngineH3PinkCherryInt8:
 		return "H3 PinkCherry INT8"
+	case EngineH3Director:
+		return "H3 Timeline Director"
 	case EngineLLadaImage:
 		return "LLaDA-Image"
 	default:
@@ -314,6 +361,15 @@ func IsH3PinkCherryInt8(engine string) bool {
 	}
 }
 
+func IsH3Director(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineH3Director, "h3-timeline-director", "timeline-director", "director":
+		return true
+	default:
+		return false
+	}
+}
+
 func IsImageEngine(engine string) bool {
 	switch engine {
 	case EngineLLadaImage, "llada", "llada_image":
@@ -334,4 +390,21 @@ func IsVideoMode(mode string) bool {
 	default:
 		return false
 	}
+}
+
+func SupportsRef2VA(engine string) bool {
+	return IsH3Ref2VAInt8(engine) || IsH3Director(engine)
+}
+
+func SupportsFirstFrame(engine string) bool {
+	switch CanonicalEngine(engine) {
+	case EngineH3, EngineH3Turbo, EngineH3PinkCherryInt8:
+		return true
+	default:
+		return false
+	}
+}
+
+func ContinueUsesLastFrame(engine string) bool {
+	return SupportsFirstFrame(engine) && !SupportsRef2VA(engine)
 }
