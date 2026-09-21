@@ -37,6 +37,17 @@ func TestParseStoryboardContentArray(t *testing.T) {
 	}
 }
 
+func TestParseStoryboardContentStripsThink(t *testing.T) {
+	raw := "<think>先拆两镜</think>\n说明如下\n{\"shots\":[{\"scene\":\"雨夜\",\"image_prompt\":\"竖屏\"}]}"
+	shots, err := ParseStoryboardContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shots) != 1 || shots[0].Scene != "雨夜" {
+		t.Fatalf("%+v", shots)
+	}
+}
+
 func TestParseStoryboardContentRejectsGarbage(t *testing.T) {
 	if _, err := ParseStoryboardContent("这不是 JSON"); err == nil {
 		t.Fatal("expected error")

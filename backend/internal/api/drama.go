@@ -365,9 +365,21 @@ func (s *Server) runDramaStoryboard(c *gin.Context) {
 
 func (s *Server) generateDramaStoryboard(projectID, style, styleNotes, script string, targetSec int) {
 	n := drama.SuggestedShotCount(targetSec)
-	content, model, err := s.dramaChat(true, drama.StoryboardSystemPrompt(), drama.StoryboardUserPrompt(style, styleNotes, script), func() string {
-		return drama.EncodeShots(drama.MockStoryboard(script, style, n))
-	})
+	system := drama.StoryboardSystemPrompt()
+	user := drama.StoryboardUserPrompt(style, styleNotes, script)
+	mock := func() string { return drama.EncodeShots(drama.MockStoryboard(script, style, n)) }
+	content, model, err := s.dramaChat(true, system, user, mock)
+	shots, parseErr := []models.DramaShot(nil), error(nil)
+	if err == nil {
+		shots, parseErr = drama.ParseStoryboardContent(content)
+	}
+	if err != nil || parseErr != nil {
+		log.Printf("drama storyboard retry without json_object project=%s: %v %v", projectID, err, parseErr)
+		content, model, err = s.dramaChat(false, system, user, mock)
+		if err == nil {
+			shots, parseErr = drama.ParseStoryboardContent(content)
+		}
+	}
 	unlock := lockDrama(projectID)
 	defer unlock()
 	updates := map[string]any{"updated_at": time.Now(), "step": models.DramaStepStoryboard}
@@ -378,7 +390,6 @@ func (s *Server) generateDramaStoryboard(projectID, style, styleNotes, script st
 		_ = s.db.Model(&models.DramaProject{}).Where("id = ?", projectID).Updates(updates).Error
 		return
 	}
-	shots, parseErr := drama.ParseStoryboardContent(content)
 	if parseErr != nil {
 		log.Printf("drama storyboard parse project=%s: %v", projectID, parseErr)
 		updates["status"] = models.DramaStatusFailed

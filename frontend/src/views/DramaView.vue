@@ -105,7 +105,8 @@
         <div class="actions">
           <button class="btn" type="button" :disabled="busy" @click="save">保存剧本</button>
           <button class="btn" type="button" :disabled="busy || llmBusy || !project.idea.trim()" @click="generateScript">{{ project.status === 'writing' ? '正在写剧本…' : '生成本地剧本' }}</button>
-          <button class="btn btn-primary" type="button" :disabled="busy || llmBusy || !project.script_text.trim()" @click="goto('storyboard')">下一步：分镜</button>
+          <button class="btn btn-primary" type="button" :disabled="busy || llmBusy || !project.script_text.trim()" @click="generateStoryboard">{{ project.status === 'storyboard' ? '正在拆分镜…' : '下一步：本地拆分镜' }}</button>
+          <button class="btn" type="button" :disabled="busy || llmBusy || !project.script_text.trim()" @click="goto('storyboard')">只进分镜页</button>
         </div>
       </div>
 
@@ -118,7 +119,7 @@
             <button class="btn" type="button" :disabled="busy || llmBusy || shots.length >= 8" @click="addShot">加一镜</button>
             <button class="btn" type="button" :disabled="busy || llmBusy" @click="fillShots(false)">按时长拆空镜</button>
             <button class="btn" type="button" :disabled="busy || llmBusy || shots.length === 0" @click="fillShots(true)">覆盖重拆</button>
-            <button class="btn" type="button" :disabled="busy || llmBusy || !project.script_text.trim()" @click="generateStoryboard">{{ project.status === 'storyboard' ? '正在拆分镜…' : '本地拆分镜' }}</button>
+            <button class="btn btn-primary" type="button" :disabled="busy || llmBusy || !project.script_text.trim()" @click="generateStoryboard">{{ project.status === 'storyboard' ? '正在拆分镜…' : '本地拆分镜' }}</button>
             <button class="btn" type="button" :disabled="busy || llmBusy" @click="saveShots">保存分镜</button>
             <button class="btn btn-primary" type="button" :disabled="busy || llmBusy || !storyboardReady" @click="goto('image')">下一步：出图</button>
           </div>
@@ -630,9 +631,13 @@ async function generateStoryboard() {
   if (shots.value.length && !window.confirm('本地拆分镜会覆盖现有分镜，继续？')) return
   await act(async () => {
     await api.patchDramaProject(project.value!.id, {
+      title: project.value!.title,
+      idea: project.value!.idea,
       style: project.value!.style,
       style_notes: project.value!.style_notes,
+      target_sec: project.value!.target_sec,
       script_text: project.value!.script_text,
+      step: 'storyboard',
     })
     return api.dramaStoryboard(project.value!.id, { mode: 'llm', replace: true })
   })

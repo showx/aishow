@@ -67,6 +67,7 @@ func (c *Client) Complete(ctx context.Context, base, token, model, system, user 
 			{"role": "user", "content": user},
 		},
 		"temperature": 0.7,
+		"think":       false,
 	}
 	if jsonMode {
 		payload["response_format"] = map[string]string{"type": "json_object"}
@@ -100,7 +101,8 @@ func (c *Client) Complete(ctx context.Context, base, token, model, system, user 
 		Model   string `json:"model"`
 		Choices []struct {
 			Message struct {
-				Content string `json:"content"`
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
@@ -112,11 +114,18 @@ func (c *Client) Complete(ctx context.Context, base, token, model, system, user 
 	if err := json.Unmarshal(raw, &sr); err != nil {
 		return nil, fmt.Errorf("无法解析 Chat 响应: %s", clip(raw, 200))
 	}
-	if len(sr.Choices) == 0 || strings.TrimSpace(sr.Choices[0].Message.Content) == "" {
+	if len(sr.Choices) == 0 {
+		return nil, fmt.Errorf("模型没有返回内容")
+	}
+	content := strings.TrimSpace(sr.Choices[0].Message.Content)
+	if content == "" {
+		content = strings.TrimSpace(sr.Choices[0].Message.ReasoningContent)
+	}
+	if content == "" {
 		return nil, fmt.Errorf("模型没有返回内容")
 	}
 	out := &Result{
-		Content:          sr.Choices[0].Message.Content,
+		Content:          content,
 		Model:            firstNonEmpty(sr.Model, model),
 		ID:               sr.ID,
 		PromptTokens:     sr.Usage.PromptTokens,

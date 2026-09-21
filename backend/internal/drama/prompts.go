@@ -10,6 +10,7 @@ import (
 )
 
 var jsonFence = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)```")
+var thinkBlock = regexp.MustCompile("(?s)<think>.*?</think>")
 
 func WriteSystemPrompt() string {
 	return "你是短剧编剧。请根据用户给出的题材、风格和目标时长，写出适合竖屏短剧的完整剧本。要求：分场清晰，对白口语化，每场标明场景与情绪，控制在目标时长内。只输出剧本正文，不要解释。"
@@ -34,7 +35,7 @@ func StoryboardSystemPrompt() string {
 }
 
 func StoryboardUserPrompt(style, styleNotes, script string) string {
-	return fmt.Sprintf("风格：%s\n风格注意事项：%s\n剧本：\n%s", emptyAs(style, "未指定"), emptyAs(styleNotes, "无"), script)
+	return fmt.Sprintf("风格：%s\n风格注意事项：%s\n剧本：\n%s\n\n只输出一个 JSON 对象，不要解释，不要思考过程。", emptyAs(style, "未指定"), emptyAs(styleNotes, "无"), script)
 }
 
 func RewriteImageSystemPrompt() string {
@@ -107,15 +108,68 @@ func FormatBeats(shot models.DramaShot, continueFromPrev bool) string {
 }
 
 func ParseStoryboardContent(content string) ([]models.DramaShot, error) {
-	text := strings.TrimSpace(content)
+	text := strings.TrimSpace(thinkBlock.ReplaceAllString(content, ""))
 	if m := jsonFence.FindStringSubmatch(text); len(m) > 1 {
 		text = strings.TrimSpace(m[1])
+	}
+	if extracted := extractJSONPayload(text); extracted != "" {
+		text = extracted
 	}
 	shots := ParseShots(text)
 	if len(shots) == 0 {
 		return nil, fmt.Errorf("分镜 JSON 无法解析")
 	}
 	return DecorateContinue(shots), nil
+}
+
+func extractJSONPayload(text string) string {
+	text = strings.TrimSpace(text)
+	obj := strings.Index(text, "{")
+	arr := strings.Index(text, "[")
+	start := -1
+	endChar := byte('}')
+	if obj >= 0 && (arr < 0 || obj < arr) {
+		start = obj
+		endChar = '}'
+	} else if arr >= 0 {
+		start = arr
+		endChar = ']'
+	}
+	if start < 0 {
+		return ""
+	}
+	depth := 0
+	inStr := false
+	esc := false
+	for i := start; i < len(text); i++ {
+		c := text[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 && c == endChar {
+				return strings.TrimSpace(text[start : i+1])
+			}
+		}
+	}
+	return ""
 }
 
 func DecorateContinue(shots []models.DramaShot) []models.DramaShot {
