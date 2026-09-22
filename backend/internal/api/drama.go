@@ -87,10 +87,10 @@ func (s *Server) createDramaProject(c *gin.Context) {
 		Status:         models.DramaStatusDraft,
 		ShotsJSON:      "[]",
 		ImageRefsJSON:  "[]",
-		ImageEngine:    models.EngineLLadaImage,
+		ImageEngine:    models.EngineQwenImage,
 		ImageAspect:    "9:16",
-		ImageShortEdge: 768,
-		ImageQuality:   "turbo",
+		ImageShortEdge: 1024,
+		ImageQuality:   "base",
 		VideoEngine:    models.EngineH3,
 		ContinueEngine: models.EngineH3Ref2VAInt8,
 		VideoAspect:    "9:16",
@@ -642,7 +642,7 @@ func (s *Server) startDramaShotImage(p *models.DramaProject, shots []models.Dram
 	}
 	refs := drama.MergeImageRefs(p, shot, prev)
 	refID := drama.FirstImageRefID(refs)
-	engine := emptyAs(p.ImageEngine, models.EngineLLadaImage)
+	engine := emptyAs(p.ImageEngine, models.EngineQwenImage)
 	mode := models.ModeT2I
 	var conds []models.AssetCondition
 	if models.IsQwenImage(engine) {

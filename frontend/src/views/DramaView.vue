@@ -414,8 +414,8 @@ const stepLabel: Record<DramaStep, string> = { write: '剧本', storyboard: '分
 const statusLabel: Record<string, string> = { draft: '草稿', writing: '写剧本', storyboard: '拆分镜', imaging: '出图中', videoing: '成片中', compiling: '合成中', done: '完成', failed: '失败' }
 const ratios = ['9:16', '16:9', '1:1', '3:4', '4:3']
 const imageEngines: { id: JobEngine; label: string }[] = [
-  { id: 'llada-image', label: 'LLaDA-Image' },
   { id: 'qwen-image', label: 'Qwen-Image-2.1' },
+  { id: 'llada-image', label: 'LLaDA-Image' },
 ]
 const videoEngines: { id: JobEngine; label: string }[] = [
   { id: 'h3', label: 'H3-Base' },
