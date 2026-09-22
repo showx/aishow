@@ -408,6 +408,8 @@ func (m *Manager) endpoint(engine string, snap models.SettingsPayload) string {
 		return strings.TrimRight(snap.H3TurboURL, "/")
 	case models.EngineLLadaImage:
 		return strings.TrimRight(snap.LLaDAImageURL, "/")
+	case models.EngineQwenImage:
+		return strings.TrimRight(snap.QwenImageURL, "/")
 	default:
 		return strings.TrimRight(snap.SGLANGFL2VAURL, "/")
 	}
@@ -568,6 +570,7 @@ func exclusiveEngines() []string {
 		models.EngineH3Director,
 		models.EngineFastH3,
 		models.EngineLLadaImage,
+		models.EngineQwenImage,
 	}
 }
 
@@ -585,6 +588,8 @@ func engineSpec(engine string) (spec, bool) {
 		return spec{ID: models.EngineH3Turbo, Label: "H3 Turbo LoRA", Script: "start_h3_turbo_lora.bat"}, true
 	case models.EngineLLadaImage:
 		return spec{ID: models.EngineLLadaImage, Label: "LLaDA-Image", Script: "start_llada_image.bat"}, true
+	case models.EngineQwenImage:
+		return spec{ID: models.EngineQwenImage, Label: "Qwen-Image-2.1", Script: "start_qwen_image.bat"}, true
 	case models.EngineH3:
 		return spec{ID: models.EngineH3, Label: "H3-Base", Script: "start_h3_nf4.bat"}, true
 	default:

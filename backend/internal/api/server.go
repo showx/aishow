@@ -173,6 +173,7 @@ func (s *Server) system(c *gin.Context) {
 	dr := inspect(snap.H3DirectorURL)
 	fh := inspect(snap.FastH3URL)
 	ll := inspect(snap.LLaDAImageURL)
+	qw := inspect(snap.QwenImageURL)
 	ch := s.chat.Inspect(snap.ChatURL, settings.ChatToken(s.db, s.cfg))
 	tt := s.tts.Inspect(snap.TTSURL, settings.TTSToken(s.db, s.cfg))
 	endpoint := func(name, url string, h models.SidecarHealth) models.EndpointHealth {
@@ -194,6 +195,7 @@ func (s *Server) system(c *gin.Context) {
 		endpoint("H3 Timeline Director", snap.H3DirectorURL, dr),
 		endpoint("FastH3 · GGUF", snap.FastH3URL, fh),
 		endpoint("LLaDA-Image", snap.LLaDAImageURL, ll),
+		endpoint("Qwen-Image-2.1", snap.QwenImageURL, qw),
 		endpoint("本地 Chat", snap.ChatURL, ch),
 		endpoint("本地 TTS", snap.TTSURL, tt),
 	}
@@ -415,10 +417,11 @@ func (s *Server) stopRemote(job *models.Job) {
 	}
 	snap := settings.Snapshot(s.db, s.cfg)
 	if models.IsImageEngine(job.Engine) {
-		if err := s.ll.Cancel(snap.LLaDAImageURL, job.RemoteID); err != nil {
-			s.queue.Log(job.ID, "warn", "通知 LLaDA-Image 中止失败: "+err.Error())
+		label := models.EngineLabel(job.Engine)
+		if err := s.ll.Cancel(models.ImageSidecarURL(job.Engine, snap), job.RemoteID); err != nil {
+			s.queue.Log(job.ID, "warn", "通知 "+label+" 中止失败: "+err.Error())
 		} else {
-			s.queue.Log(job.ID, "info", "已通知 LLaDA-Image 中止")
+			s.queue.Log(job.ID, "info", "已通知 "+label+" 中止")
 		}
 		return
 	}
@@ -598,6 +601,8 @@ func normalizeEngine(raw string) string {
 		return models.EngineH3Director
 	case models.EngineLLadaImage, "llada", "llada_image", "lladaimage":
 		return models.EngineLLadaImage
+	case models.EngineQwenImage, "qwen-image-2.1", "qwen_image", "qwenimage", "qwen-image21":
+		return models.EngineQwenImage
 	default:
 		return ""
 	}

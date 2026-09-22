@@ -39,7 +39,7 @@
       <article class="panel block">
         <div class="row-head">
           <h2>推理链路</h2>
-          <span class="pill">H3 + LLaDA-Image</span>
+          <span class="pill">H3 + 生图</span>
         </div>
         <div class="nodes">
           <div v-for="ep in store.system?.endpoints || []" :key="ep.name" class="node">
@@ -58,7 +58,7 @@
           </div>
         </div>
         <p class="note">
-          「在线」表示权重已加载。后台默认同时只加载 1 个模型，多出来的边车会被关掉；「可排队」不是禁用，工坊仍可投递。每条链路会标出当前文字理解模型（H3 系是 Qwen3-VL 32B 量化档，LLaDA 是自身 6B 骨干）。
+          「在线」表示权重已加载。后台默认同时只加载 1 个模型，多出来的边车会被关掉；「可排队」不是禁用，工坊仍可投递。每条链路会标出当前文字理解模型（H3 系是 Qwen3-VL 32B 量化档，LLaDA 是自身 6B 骨干，Qwen-Image-2.1 是自身 Qwen3-VL）。
         </p>
       </article>
 

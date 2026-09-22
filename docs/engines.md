@@ -18,7 +18,7 @@ copy scripts\paths.example.bat scripts\paths.bat
 | --- | --- |
 | `H3_ROOT` | MiniMax-H3 / DiffSynth / ComfyUI 所在根目录 |
 | `COMFY_ROOT` | ComfyUI 便携版目录（含 `python_embeded`） |
-| `MODELS_ROOT` | FastH3 GGUF、PinkCherry、LLaDA 等权重根目录 |
+| `MODELS_ROOT` | FastH3 GGUF、PinkCherry、LLaDA、Qwen-Image 等权重根目录 |
 
 可选：`LLADA_REPO`、`LLADA_MODEL`、`ARIA2C`、`AISHOW_DOWNLOAD_PROXY`。
 
@@ -35,10 +35,11 @@ copy scripts\paths.example.bat scripts\paths.bat
 | H3 Timeline Director | 24GB 可跑 | 文生 / 参考，SelfLift 二采 | `download_h3_latent_upscaler.ps1` | `start_h3_director.bat` | `30014` / Comfy `8188` |
 | FastH3 GGUF Q4 | 24GB 推荐 | 仅文生，4 步 | `download_fasth3_gguf.ps1` | `start_fasth3_gguf.bat` | `8000` / Comfy `8188` |
 | LLaDA-Image | 视 Turbo / Base | 文生图 / 指令编辑 | 见下方 | `start_llada_image.bat` | `30020` |
+| Qwen-Image-2.1 | 约 33GB 权重，24GB 开 offload | 文生图 / 指令编辑（最多 10 张参考） | `download_qwen_image.ps1` | `start_qwen_image.bat` | `30021` |
 | FastH3 全量 bf16 | 远超 24GB | 仅文生 | `download_fasth3.ps1` | `start_fasth3.bat` | `8000` |
 | 官方 SGLang H3-Base | 多卡 | 文生 / 首尾帧 / 参考 | Hugging Face `MiniMaxAI/MiniMax-H3` | 见下方 | `30010` / `30011` |
 
-视频边车：`POST /v1/videos` → 轮询 → 下载 MP4。LLaDA-Image：`POST /v1/images` → 轮询 → 下载 PNG。
+视频边车：`POST /v1/videos` → 轮询 → 下载 MP4。LLaDA-Image / Qwen-Image-2.1：`POST /v1/images` → 轮询 → 下载 PNG。
 
 ## 3. 下载并启动
 
@@ -97,6 +98,25 @@ scripts\start_llada_image.bat
 ```
 
 默认 Turbo（4 步）。要高品质 Base，把 `LLADA_MODEL` 指到 `inclusionAI/LLaDA-Image` 的本地目录，工坊档位也选 Base。
+
+## Qwen-Image-2.1
+
+统一文生图 / 指令编辑，官方 40 步。需要独立 Python（`transformers>=5.17` + git 版 diffusers），**不要**复用 ComfyUI 或 LLaDA 的解释器。
+
+```bat
+rem scripts\paths.bat
+set "QWEN_IMAGE_MODEL=%MODELS_ROOT%\Qwen-Image-2.1"
+set "QWEN_IMAGE_PYTHON=%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe"
+set "QWEN_IMAGE_OFFLOAD=1"
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\download_qwen_image.ps1
+powershell -ExecutionPolicy Bypass -File scripts\setup_qwen_image.ps1
+scripts\start_qwen_image.bat
+```
+
+边车 `http://127.0.0.1:30021`。24GB 保持 `QWEN_IMAGE_OFFLOAD=1`，工坊先用 1024。显存够再关 offload 或提到 1536。和 LLaDA 一样走 `/v1/images`，24GB 单卡不要和其它大模型同时加载。
 
 ## 官方 SGLang（多卡）
 

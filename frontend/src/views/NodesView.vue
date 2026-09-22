@@ -3,7 +3,7 @@
     <section class="panel form" v-if="form">
       <div class="intro">
         <h2>对接 MiniMax-H3</h2>
-        <p>本控制面不在本机加载权重，而是调度 H3-Base NF4、H3 Turbo LoRA、H3 PinkCherry INT8、H3 Ref2VA INT8、H3 Timeline Director、本地 FastH3 或 LLaDA-Image。PinkCherry 是单独一套（权重目录 + ComfyUI 8189），不要和 FastH3 / Ref2VA / Director 的 8188 混用。打开「排队时自动切换模型」后，可以混着堆队列：工位会等当前引擎跑完，再停旧模型、启新模型。</p>
+        <p>本控制面不在本机加载权重，而是调度 H3-Base NF4、H3 Turbo LoRA、H3 PinkCherry INT8、H3 Ref2VA INT8、H3 Timeline Director、本地 FastH3、LLaDA-Image 或 Qwen-Image-2.1。PinkCherry 是单独一套（权重目录 + ComfyUI 8189），不要和 FastH3 / Ref2VA / Director 的 8188 混用。打开「排队时自动切换模型」后，可以混着堆队列：工位会等当前引擎跑完，再停旧模型、启新模型。</p>
         <p>每条任务会记下文字理解用了哪个编码器（以及是否走了 H3-Context-IR 提示改写），片库参数和队列日志里都能看到，方便对照「提示词 vs 成片动作」。</p>
       </div>
 
@@ -78,9 +78,13 @@
           <label>MiniMax Token（可选，H3-Context-IR）</label>
           <input v-model="form.minimax_api_token" class="input" :placeholder="form.has_minimax_token ? '已保存，留空不改' : 'Bearer token'" />
         </div>
-        <div class="field span">
+        <div class="field">
           <label>LLaDA-Image 地址</label>
           <input v-model="form.llada_image_url" class="input" placeholder="http://127.0.0.1:30020" />
+        </div>
+        <div class="field">
+          <label>Qwen-Image-2.1 地址</label>
+          <input v-model="form.qwen_image_url" class="input" placeholder="http://127.0.0.1:30021" />
         </div>
         <div class="field">
           <label>本地 Chat 地址</label>
@@ -136,7 +140,8 @@ H3 Ref2VA INT8  Qwen3-VL 32B 量化     %FASTH3_GGUF_ROOT%\text_encoders
 H3 Director     Qwen3-VL 32B 量化     同上，工作流走 TimelineDirector 二采
 FastH3 GGUF     Qwen3-VL 32B 量化     同上
 LLaDA-Image     LLaDA-Image 6B        模型自身语言骨干（Turbo / Base）
-提示改写        H3-Context-IR         仅在勾选「增强提示」且非 LLaDA 时</pre>
+Qwen-Image-2.1  Qwen-Image-2.1        模型自身 Qwen3-VL（约 33GB）
+提示改写        H3-Context-IR         仅在勾选「增强提示」且非生图引擎时</pre>
     </section>
 
     <section class="panel docs">
@@ -159,6 +164,14 @@ LLaDA-Image     LLaDA-Image 6B        模型自身语言骨干（Turbo / Base）
       <pre class="mono">git clone https://github.com/inclusionAI/LLaDA-Image.git
 # 在 scripts\paths.bat 填写 LLADA_REPO、LLADA_MODEL
 scripts\start_llada_image.bat</pre>
+    </section>
+
+    <section class="panel docs">
+      <h2>本机 Qwen-Image-2.1（开源生图）</h2>
+      <p>工坊选择「Qwen-Image-2.1」后，任务走本机边车 <code>http://127.0.0.1:30021/v1/images</code>。统一文生图与指令编辑，最多 10 张参考。官方 40 步。需要独立 Python（transformers 5.17+、git 版 diffusers），不要复用 ComfyUI / LLaDA 的解释器。24GB 默认 CPU offload。</p>
+      <pre class="mono">powershell -File scripts\download_qwen_image.ps1
+powershell -File scripts\setup_qwen_image.ps1
+scripts\start_qwen_image.bat</pre>
     </section>
 
     <section class="panel docs">
@@ -248,6 +261,7 @@ onMounted(async () => {
   if (!next.h3_turbo_url) next.h3_turbo_url = 'http://127.0.0.1:30012'
   if (!next.h3_pinkcherry_url) next.h3_pinkcherry_url = 'http://127.0.0.1:30013'
   if (!next.h3_director_url) next.h3_director_url = 'http://127.0.0.1:30014'
+  if (!next.qwen_image_url) next.qwen_image_url = 'http://127.0.0.1:30021'
   if (!next.chat_url) next.chat_url = 'http://127.0.0.1:11434'
   if (!next.chat_model) next.chat_model = 'qwen3.5:4b'
   form.value = next

@@ -97,7 +97,7 @@
             @remove="removeRef"
             @change="persistProjectRefs"
           />
-          <p class="hint">人物、场景参考全程跟着走。LLaDA 出图只吃第一张，其余写进提示；Director / Ref2VA 成片最多带 9 张，可再给单镜加图。</p>
+          <p class="hint">人物、场景参考全程跟着走。LLaDA 出图只吃第一张，其余写进提示；Qwen-Image-2.1 可带多张参考。Director / Ref2VA 成片最多带 9 张，可再给单镜加图。</p>
         </div>
       </div>
 
@@ -192,13 +192,23 @@
       <div v-else-if="project.step === 'image' || project.step === 'video'" class="desk make">
         <div class="panel toolbar">
           <template v-if="project.step === 'image'">
+            <div class="field">
+              <label>出图引擎</label>
+              <div class="seg wrap">
+                <button v-for="e in imageEngines" :key="e.id" :class="{ active: project.image_engine === e.id }" type="button" @click="setImageEngine(e.id)">{{ e.label }}</button>
+              </div>
+            </div>
             <div class="grid-2">
-              <div class="field">
+              <div class="field" v-if="project.image_engine === 'llada-image'">
                 <label>档位</label>
                 <div class="seg">
                   <button :class="{ active: project.image_quality === 'turbo' }" type="button" @click="project.image_quality = 'turbo'">Turbo</button>
                   <button :class="{ active: project.image_quality === 'base' }" type="button" @click="project.image_quality = 'base'">Base</button>
                 </div>
+              </div>
+              <div class="field" v-else>
+                <label>采样</label>
+                <p class="hint">Qwen-Image-2.1 官方 40 步。24GB 建议短边 1024。</p>
               </div>
               <div class="field">
                 <label>画幅 / 短边</label>
@@ -206,6 +216,7 @@
                   <button v-for="r in ratios" :key="r" :class="{ active: project.image_aspect === r }" type="button" @click="project.image_aspect = r">{{ r }}</button>
                   <button :class="{ active: project.image_short_edge === 768 }" type="button" @click="project.image_short_edge = 768">768</button>
                   <button :class="{ active: project.image_short_edge === 1024 }" type="button" @click="project.image_short_edge = 1024">1024</button>
+                  <button v-if="project.image_engine === 'qwen-image'" :class="{ active: project.image_short_edge === 1536 }" type="button" @click="project.image_short_edge = 1536">1536</button>
                 </div>
               </div>
             </div>
@@ -402,6 +413,10 @@ const steps: { id: DramaStep; no: string; title: string }[] = [
 const stepLabel: Record<DramaStep, string> = { write: '剧本', storyboard: '分镜', image: '出图', video: '成片', compile: '合成' }
 const statusLabel: Record<string, string> = { draft: '草稿', writing: '写剧本', storyboard: '拆分镜', imaging: '出图中', videoing: '成片中', compiling: '合成中', done: '完成', failed: '失败' }
 const ratios = ['9:16', '16:9', '1:1', '3:4', '4:3']
+const imageEngines: { id: JobEngine; label: string }[] = [
+  { id: 'llada-image', label: 'LLaDA-Image' },
+  { id: 'qwen-image', label: 'Qwen-Image-2.1' },
+]
 const videoEngines: { id: JobEngine; label: string }[] = [
   { id: 'h3', label: 'H3-Base' },
   { id: 'h3-turbo', label: 'Turbo' },
@@ -463,6 +478,17 @@ watch(() => [selectedId.value, project.value?.status] as const, ([id, status], [
 watch(() => shots.value.length, n => {
   if (focusIndex.value >= n) focusIndex.value = Math.max(0, n - 1)
 })
+
+function setImageEngine(id: JobEngine) {
+  if (!project.value) return
+  project.value.image_engine = id
+  if (id === 'qwen-image') {
+    project.value.image_quality = 'base'
+    if (project.value.image_short_edge > 1536) project.value.image_short_edge = 1024
+  } else if (!project.value.image_quality || project.value.image_quality === 'base') {
+    project.value.image_quality = 'turbo'
+  }
+}
 
 function shouldPoll(p: DramaProject) {
   if (p.status === 'writing' || p.status === 'storyboard' || p.status === 'imaging' || p.status === 'videoing' || p.status === 'compiling' || p.compile_status === 'compiling') return true

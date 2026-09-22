@@ -87,6 +87,8 @@ func DescribeTextEncoder(engine, filename string) (id, label string) {
 			return name, "LLaDA-Image 6B Turbo"
 		}
 		return name, "LLaDA-Image 6B"
+	case strings.Contains(low, "qwen-image") || strings.Contains(low, "qwenimage"):
+		return name, "Qwen-Image-2.1"
 	}
 	switch CanonicalEngine(engine) {
 	case EngineFastH3, EngineH3Ref2VAInt8, EngineH3Director:
@@ -113,6 +115,11 @@ func DescribeTextEncoder(engine, filename string) (id, label string) {
 			return name, "LLaDA-Image 6B Turbo"
 		}
 		return name, "LLaDA-Image 6B"
+	case EngineQwenImage:
+		if name == "" {
+			return "Qwen-Image-2.1", "Qwen-Image-2.1"
+		}
+		return name, "Qwen-Image-2.1"
 	default:
 		if name == "" {
 			return "minimax-h3-text-encoder-nf4.safetensors", "Qwen3-VL 32B NF4"

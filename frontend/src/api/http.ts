@@ -1,6 +1,6 @@
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type JobMode = 't2va' | 'i2va' | 'l2va' | 'fl2va' | 'ref2va' | 't2i' | 'i2i'
-export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-turbo' | 'h3-ref2va-int8' | 'h3-pinkcherry-int8' | 'h3-director' | 'llada-image'
+export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-turbo' | 'h3-ref2va-int8' | 'h3-pinkcherry-int8' | 'h3-director' | 'llada-image' | 'qwen-image'
 
 export interface JobAsset {
   id: string
@@ -135,6 +135,7 @@ export interface SettingsPayload {
   h3_pinkcherry_url: string
   h3_director_url?: string
   llada_image_url: string
+  qwen_image_url?: string
   chat_url?: string
   chat_model?: string
   chat_api_token?: string
@@ -330,6 +331,7 @@ export const engineLabel: Record<JobEngine, string> = {
   'h3-pinkcherry-int8': 'H3 PinkCherry INT8',
   'h3-director': 'H3 Timeline Director',
   'llada-image': 'LLaDA-Image',
+  'qwen-image': 'Qwen-Image-2.1',
 }
 
 export function engineName(engine?: string) {
@@ -339,11 +341,17 @@ export function engineName(engine?: string) {
   if (engine === 'h3-pinkcherry-int8') return engineLabel['h3-pinkcherry-int8']
   if (engine === 'h3-director') return engineLabel['h3-director']
   if (engine === 'llada-image') return engineLabel['llada-image']
+  if (engine === 'qwen-image') return engineLabel['qwen-image']
   return engineLabel.h3
+}
+
+export function isImageEngine(engine?: string) {
+  return engine === 'llada-image' || engine === 'qwen-image'
 }
 
 export function fallbackTextEncoder(engine?: string) {
   if (engine === 'llada-image') return 'LLaDA-Image 6B'
+  if (engine === 'qwen-image') return 'Qwen-Image-2.1'
   if (engine === 'h3-pinkcherry-int8') return 'PinkCherry Qwen3-VL 32B'
   if (engine === 'fasth3' || engine === 'h3-max' || engine === 'h3-ref2va-int8' || engine === 'h3-director') return 'Qwen3-VL 32B 量化'
   return 'Qwen3-VL 32B NF4'
@@ -358,7 +366,7 @@ export function textUnderstanding(job: {
 }) {
   const label = job.text_encoder_label || fallbackTextEncoder(job.engine)
   const file = job.text_encoder && job.text_encoder !== label ? job.text_encoder : ''
-  const rewrite = job.prompt_rewriter || (job.enhance_prompt && job.engine !== 'llada-image' ? 'H3-Context-IR' : '')
+  const rewrite = job.prompt_rewriter || (job.enhance_prompt && !isImageEngine(job.engine) ? 'H3-Context-IR' : '')
   let s = label
   if (file) s += ` · ${file}`
   if (rewrite) s += ` · 改写 ${rewrite}`
@@ -370,7 +378,7 @@ export function textUnderstandingShort(job: { engine?: string; text_encoder_labe
 }
 
 export function isImageJob(job: { engine?: string; mode?: string }) {
-  return job.engine === 'llada-image' || job.mode === 't2i' || job.mode === 'i2i'
+  return isImageEngine(job.engine) || job.mode === 't2i' || job.mode === 'i2i'
 }
 
 export type DramaStep = 'write' | 'storyboard' | 'image' | 'video' | 'compile'
@@ -494,6 +502,8 @@ export function canvasSize(aspect: string, short: number): { width: number; heig
     '1:1': [s, s],
     '4:3': [round32((s * 4) / 3), s],
     '3:4': [s, round32((s * 4) / 3)],
+    '3:2': [round32((s * 3) / 2), s],
+    '2:3': [s, round32((s * 3) / 2)],
     '21:9': [round32((s * 21) / 9), s],
   }
   const key = aspect === 'auto' ? '16:9' : aspect

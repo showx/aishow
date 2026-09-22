@@ -188,7 +188,7 @@ func (s *Server) patchDramaProject(c *gin.Context) {
 	if body.ImageEngine != nil {
 		eng := normalizeEngine(*body.ImageEngine)
 		if eng == "" || !models.IsImageEngine(eng) {
-			writeErr(c, badRequest("出图引擎请选择 LLaDA-Image"))
+			writeErr(c, badRequest("出图引擎请选择 LLaDA-Image 或 Qwen-Image-2.1"))
 			return
 		}
 		updates["image_engine"] = eng
@@ -642,9 +642,23 @@ func (s *Server) startDramaShotImage(p *models.DramaProject, shots []models.Dram
 	}
 	refs := drama.MergeImageRefs(p, shot, prev)
 	refID := drama.FirstImageRefID(refs)
+	engine := emptyAs(p.ImageEngine, models.EngineLLadaImage)
 	mode := models.ModeT2I
 	var conds []models.AssetCondition
-	if refID != "" {
+	if models.IsQwenImage(engine) {
+		for _, r := range refs {
+			if strings.TrimSpace(r.UploadID) == "" {
+				continue
+			}
+			conds = append(conds, models.AssetCondition{UploadID: r.UploadID, Role: "reference", Type: "image"})
+			if len(conds) >= 10 {
+				break
+			}
+		}
+		if len(conds) > 0 {
+			mode = models.ModeI2I
+		}
+	} else if refID != "" {
 		mode = models.ModeI2I
 		conds = append(conds, models.AssetCondition{UploadID: refID, Role: "reference", Type: "image"})
 	}
@@ -652,14 +666,18 @@ func (s *Server) startDramaShotImage(p *models.DramaProject, shots []models.Dram
 	if note := drama.FormatImageRefs(refs); note != "" {
 		prompt = strings.TrimSpace(prompt + "\n" + note)
 	}
+	quality := emptyAs(p.ImageQuality, "turbo")
+	if models.IsQwenImage(engine) {
+		quality = "base"
+	}
 	job, err := s.enqueueJob(p.UserID, models.CreateJobRequest{
 		Title:          fmt.Sprintf("%s · 镜%02d 出图", p.Title, shot.Index),
 		Mode:           mode,
-		Engine:         models.EngineLLadaImage,
+		Engine:         engine,
 		Prompt:         prompt,
 		AspectRatio:    emptyAs(p.ImageAspect, "9:16"),
 		ShortEdge:      p.ImageShortEdge,
-		Quality:        emptyAs(p.ImageQuality, "turbo"),
+		Quality:        quality,
 		Conditions:     conds,
 		DramaID:        p.ID,
 		DramaShotIndex: shot.Index,

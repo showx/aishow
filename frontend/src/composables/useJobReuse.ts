@@ -10,6 +10,7 @@ export function asEngine(engine?: string, mode?: string): JobEngine {
   if (engine === 'h3-pinkcherry-int8') return 'h3-pinkcherry-int8'
   if (engine === 'h3-director') return 'h3-director'
   if (engine === 'llada-image') return 'llada-image'
+  if (engine === 'qwen-image') return 'qwen-image'
   if (mode === 'ref2va') return 'h3-ref2va-int8'
   return 'h3'
 }

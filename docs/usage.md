@@ -55,6 +55,15 @@ FastH3 只做文生。H3-Base / Turbo / PinkCherry 做文生和首尾帧。参�
 
 第一次加载 LLaDA Turbo 大约 46GB 权重要读盘上 GPU，等几分钟是正常的。
 
+### 投一张图（Qwen-Image-2.1）
+
+1. 引擎选 **Qwen-Image-2.1**
+2. **文生图** `t2i` 只写画面；**指令编辑** `i2i` 可拖最多 10 张参考图
+3. 官方默认 40 步，CFG 关闭。24GB 先用短边 1024
+4. 先跑 `download_qwen_image.ps1` 和 `setup_qwen_image.ps1`，再开 `start_qwen_image.bat`
+
+第一次加载约 33GB 权重。默认 CPU offload，读盘上 GPU 也要等几分钟。
+
 ### 填回与再生成
 
 工坊右侧、队列、作品库都有：

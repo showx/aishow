@@ -1,4 +1,4 @@
-# Shared path / download helpers for scripts\*.ps1
+﻿# Shared path / download helpers for scripts\*.ps1
 # Usage:  . "$PSScriptRoot\_env.ps1"
 
 $ErrorActionPreference = "Continue"
@@ -44,6 +44,9 @@ if ($ModelsRoot) {
         $full = Join-Path $ModelsRoot "FastVideo-Minimax-FastH3-Preview-v0.2"
         if (Test-Path $full) { $env:FASTH3_LOCAL_DIR = $full }
     }
+    if (-not (Get-AishowEnv "QWEN_IMAGE_MODEL")) {
+        $env:QWEN_IMAGE_MODEL = Join-Path $ModelsRoot "Qwen-Image-2.1"
+    }
 }
 
 $Aria = Get-AishowEnv "ARIA2C"
@@ -53,7 +56,7 @@ $Curl = if (Test-Path "$env:SystemRoot\System32\curl.exe") { "$env:SystemRoot\Sy
 function Require-AishowEnv([string]$Name) {
     $v = Get-AishowEnv $Name
     if (-not $v) {
-        Write-Host "缺少 $Name。请复制 scripts\paths.example.bat 为 scripts\paths.bat 并填写本机路径。"
+        Write-Host "Missing $Name. Copy scripts\paths.example.bat to scripts\paths.bat and fill local paths."
         exit 1
     }
     return $v

@@ -145,6 +145,7 @@ function jobMeta(job: Job) {
 }
 
 function qualityLabel(job: Job) {
+  if (job.engine === 'qwen-image') return `${job.steps || 40} 步`
   if (job.quality === 'turbo') return 'Turbo 4 步'
   if (job.quality === 'base') return 'Base 50 步'
   return job.quality || '—'

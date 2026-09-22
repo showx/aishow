@@ -109,8 +109,8 @@ func (w *Worker) resumeActive() {
 			snap := settings.Snapshot(w.db, w.cfg)
 			w.queue.Log(job.ID, "info", "控制面重启，继续跟踪 "+job.RemoteID)
 			var err error
-			if isLLada(job.Engine) {
-				err = w.waitLLada(&job, snap.LLaDAImageURL, job.RemoteID)
+			if isImageSidecar(job.Engine) {
+				err = w.waitLLada(&job, models.ImageSidecarURL(job.Engine, snap), job.RemoteID)
 			} else if isFastH3(job.Engine) {
 				err = w.waitRemote(&job, snap.FastH3URL, job.RemoteID)
 			} else {
@@ -168,7 +168,7 @@ func (w *Worker) process(job *models.Job) error {
 	mode := strings.ToLower(snap.InferenceMode)
 
 	prompt := job.Prompt
-	if job.EnhancePrompt && !isLLada(job.Engine) {
+	if job.EnhancePrompt && !isImageSidecar(job.Engine) {
 		if err := w.queue.Update(job, map[string]any{"stage": "提示增强", "progress": 12}); err != nil {
 			return err
 		}
@@ -196,7 +196,7 @@ func (w *Worker) process(job *models.Job) error {
 	}
 	w.captureTextUnderstanding(job, snap)
 
-	if isLLada(job.Engine) {
+	if isImageSidecar(job.Engine) {
 		if mode == "mock" {
 			return w.mock(job)
 		}
@@ -362,9 +362,10 @@ func (w *Worker) processFastH3(job *models.Job, snap models.SettingsPayload, pro
 }
 
 func (w *Worker) processLLada(job *models.Job, snap models.SettingsPayload, prompt string, conditions []sglang.Condition) error {
-	endpoint := snap.LLaDAImageURL
+	label := models.EngineLabel(job.Engine)
+	endpoint := models.ImageSidecarURL(job.Engine, snap)
 	if strings.TrimSpace(endpoint) == "" {
-		return fmt.Errorf("未配置 LLaDA-Image 节点地址")
+		return fmt.Errorf("未配置 %s 节点地址", label)
 	}
 	refs := make([]llada.Condition, 0, len(conditions))
 	for _, c := range conditions {
@@ -380,23 +381,23 @@ func (w *Worker) processLLada(job *models.Job, snap models.SettingsPayload, prom
 		Conditions:        refs,
 		Quality:           job.Quality,
 		NumInferenceSteps: job.Steps,
-		GuidanceScale:     lladaGuidance(job.Quality, job.FlowShift),
+		GuidanceScale:     imageGuidance(job.Engine, job.Quality, job.FlowShift),
 		Seed:              job.Seed,
 		Target: llada.Target{
 			ShortEdge:   job.ShortEdge,
 			AspectRatio: job.AspectRatio,
 		},
 	}
-	if err := w.queue.Update(job, map[string]any{"stage": "提交 LLaDA-Image", "progress": 22}); err != nil {
+	if err := w.queue.Update(job, map[string]any{"stage": "提交 " + label, "progress": 22}); err != nil {
 		return err
 	}
 	created, err := w.llada.Create(endpoint, req)
 	if err != nil {
-		return fmt.Errorf("提交 LLaDA-Image 失败: %w", err)
+		return fmt.Errorf("提交 %s 失败: %w", label, err)
 	}
 	w.mergeSidecarTextEncoder(job, created.TextEncoder, created.TextEncoderLabel)
 	_ = w.queue.Update(job, map[string]any{"remote_id": created.ID, "stage": "扩散采样", "progress": 28})
-	w.queue.Log(job.ID, "info", "LLaDA-Image 任务 "+created.ID)
+	w.queue.Log(job.ID, "info", label+" 任务 "+created.ID)
 	return w.waitLLada(job, endpoint, created.ID)
 }
 
@@ -422,7 +423,7 @@ func (w *Worker) waitLLada(job *models.Job, endpoint, remoteID string) error {
 			_ = w.queue.Cancel(job.ID)
 			return fmt.Errorf("任务已取消")
 		case "failed", "error":
-			msg := "LLaDA-Image 推理失败"
+			msg := models.EngineLabel(job.Engine) + " 推理失败"
 			if st.Error != nil && st.Error.Message != "" {
 				msg = st.Error.Message
 			}
@@ -439,7 +440,7 @@ func (w *Worker) waitLLada(job *models.Job, endpoint, remoteID string) error {
 		}
 		time.Sleep(1500 * time.Millisecond)
 	}
-	return fmt.Errorf("等待 LLaDA-Image 超时")
+	return fmt.Errorf("等待 %s 超时", models.EngineLabel(job.Engine))
 }
 
 func (w *Worker) downloadImage(job *models.Job, endpoint, remoteID string) error {
@@ -453,9 +454,12 @@ func (w *Worker) downloadImage(job *models.Job, endpoint, remoteID string) error
 	return w.queue.FinishMedia(job, models.StatusSucceeded, "已完成", "", dest, n, false, true)
 }
 
-func lladaGuidance(quality string, flowShift float64) float64 {
+func imageGuidance(engine, quality string, flowShift float64) float64 {
 	if flowShift > 0 {
 		return flowShift
+	}
+	if models.IsQwenImage(engine) {
+		return 1
 	}
 	if strings.EqualFold(quality, "base") {
 		return 5
@@ -463,7 +467,7 @@ func lladaGuidance(quality string, flowShift float64) float64 {
 	return 1
 }
 
-func isLLada(engine string) bool {
+func isImageSidecar(engine string) bool {
 	return models.IsImageEngine(engine)
 }
 
@@ -666,8 +670,8 @@ func (w *Worker) applyTextUnderstanding(job *models.Job, encoder, label string, 
 }
 
 func jobEndpoint(job *models.Job, snap models.SettingsPayload) string {
-	if isLLada(job.Engine) {
-		return snap.LLaDAImageURL
+	if isImageSidecar(job.Engine) {
+		return models.ImageSidecarURL(job.Engine, snap)
 	}
 	if isFastH3(job.Engine) {
 		return snap.FastH3URL

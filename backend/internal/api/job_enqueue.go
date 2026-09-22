@@ -55,10 +55,10 @@ func (s *Server) enqueueJob(userID string, in models.CreateJobRequest) (*models.
 		return nil, badRequest("参考生成请改选「H3 Ref2VA INT8」或「H3 Timeline Director」；H3-Base / Turbo LoRA 只承接文生和首尾帧")
 	}
 	if models.IsImageEngine(engine) && !models.IsImageMode(mode) {
-		return nil, badRequest("LLaDA-Image 仅支持文生图与指令编辑")
+		return nil, badRequest(models.EngineLabel(engine) + " 仅支持文生图与指令编辑")
 	}
 	if !models.IsImageEngine(engine) && models.IsImageMode(mode) {
-		return nil, badRequest("文生图 / 指令编辑请选择 LLaDA-Image")
+		return nil, badRequest("文生图 / 指令编辑请选择 LLaDA-Image 或 Qwen-Image-2.1")
 	}
 	if strings.TrimSpace(in.Prompt) == "" {
 		return nil, badRequest("请填写提示词")
@@ -66,8 +66,8 @@ func (s *Server) enqueueJob(userID string, in models.CreateJobRequest) (*models.
 	if models.IsImageEngine(engine) {
 		in.Duration = 0
 		in.EnhancePrompt = false
-		if in.Quality == "" {
-			in.Quality = "turbo"
+		if in.AspectRatio == "" || in.AspectRatio == "auto" {
+			in.AspectRatio = "1:1"
 		}
 		if in.ShortEdge <= 0 {
 			in.ShortEdge = 1024
@@ -75,24 +75,39 @@ func (s *Server) enqueueJob(userID string, in models.CreateJobRequest) (*models.
 		if in.ShortEdge < 512 {
 			in.ShortEdge = 512
 		}
-		if in.ShortEdge > 1536 {
-			in.ShortEdge = 1536
-		}
-		if in.AspectRatio == "" || in.AspectRatio == "auto" {
-			in.AspectRatio = "1:1"
-		}
-		if in.Steps == 0 {
-			if strings.EqualFold(in.Quality, "base") {
-				in.Steps = 50
-			} else {
-				in.Steps = 4
+		if models.IsQwenImage(engine) {
+			if in.Quality == "" || in.Quality == "turbo" || in.Quality == "lossless" {
+				in.Quality = "base"
 			}
-		}
-		if in.FlowShift == 0 {
-			if strings.EqualFold(in.Quality, "base") {
-				in.FlowShift = 5
-			} else {
+			if in.ShortEdge > 2048 {
+				in.ShortEdge = 2048
+			}
+			if in.Steps == 0 {
+				in.Steps = 40
+			}
+			if in.FlowShift == 0 {
 				in.FlowShift = 1
+			}
+		} else {
+			if in.Quality == "" {
+				in.Quality = "turbo"
+			}
+			if in.ShortEdge > 1536 {
+				in.ShortEdge = 1536
+			}
+			if in.Steps == 0 {
+				if strings.EqualFold(in.Quality, "base") {
+					in.Steps = 50
+				} else {
+					in.Steps = 4
+				}
+			}
+			if in.FlowShift == 0 {
+				if strings.EqualFold(in.Quality, "base") {
+					in.FlowShift = 5
+				} else {
+					in.FlowShift = 1
+				}
 			}
 		}
 	} else {

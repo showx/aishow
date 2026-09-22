@@ -18,6 +18,8 @@ func TestCanonicalEngine(t *testing.T) {
 		"timeline-director":  EngineH3Director,
 		"llada-image":        EngineLLadaImage,
 		"llada":              EngineLLadaImage,
+		"qwen-image":         EngineQwenImage,
+		"qwen-image-2.1":     EngineQwenImage,
 	}
 	for in, want := range cases {
 		if got := CanonicalEngine(in); got != want {
@@ -27,7 +29,7 @@ func TestCanonicalEngine(t *testing.T) {
 }
 
 func TestEngineAliasesIncludeCanonical(t *testing.T) {
-	for _, id := range []string{EngineH3, EngineFastH3, EngineH3Turbo, EngineH3Ref2VAInt8, EngineH3PinkCherryInt8, EngineH3Director, EngineLLadaImage} {
+	for _, id := range []string{EngineH3, EngineFastH3, EngineH3Turbo, EngineH3Ref2VAInt8, EngineH3PinkCherryInt8, EngineH3Director, EngineLLadaImage, EngineQwenImage} {
 		found := false
 		for _, a := range EngineAliases(id) {
 			if a == id {
@@ -45,8 +47,8 @@ func TestSupportsRef2VAAndFirstFrame(t *testing.T) {
 	if !SupportsRef2VA(EngineH3Ref2VAInt8) || !SupportsRef2VA(EngineH3Director) {
 		t.Fatal("ref2va engines")
 	}
-	if SupportsRef2VA(EngineH3) || SupportsRef2VA(EngineLLadaImage) {
-		t.Fatal("h3/llada should not advertise ref2va")
+	if SupportsRef2VA(EngineH3) || SupportsRef2VA(EngineLLadaImage) || SupportsRef2VA(EngineQwenImage) {
+		t.Fatal("h3/llada/qwen should not advertise ref2va")
 	}
 	if !SupportsFirstFrame(EngineH3) || !SupportsFirstFrame(EngineH3Turbo) || !SupportsFirstFrame(EngineH3PinkCherryInt8) {
 		t.Fatal("first-frame engines")

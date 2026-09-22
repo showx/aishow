@@ -25,7 +25,7 @@
 ## 功能
 
 - **视频**：文生 `t2va`，首帧 / 尾帧 / 首尾帧 `fl2va`，参考生成 `ref2va`；Timeline Director 用 SelfLift 二采试加速
-- **图片**：LLaDA-Image 文生图 `t2i`、指令编辑 `i2i`
+- **图片**：LLaDA-Image / Qwen-Image-2.1 文生图 `t2i`、指令编辑 `i2i`
 - **队列**：SQLite 持久化；离线引擎也能先投，轮到再启动边车
 - **24GB 单卡**：默认同时只加载 1 个模型，队列跨引擎时自动切换
 - **多用户**：第一个账号是管理员；任务和成片按账号隔离
@@ -44,7 +44,7 @@ flowchart LR
   API --> W[Worker + 编排器]
   W --> A[SGLang / DiffSynth]
   W --> B[ComfyUI 边车]
-  W --> C[LLaDA-Image]
+  W --> C[LLaDA / Qwen-Image]
 ```
 
 | 层 | 技术 | 职责 |
@@ -123,6 +123,7 @@ npm run dev
    | 参考图生成 | H3 Ref2VA INT8 | `download_h3_ref2va.ps1` | `start_h3_ref2va_int8.bat` |
    | 二采加速文生 / 参考 | H3 Timeline Director | `download_h3_latent_upscaler.ps1` | `start_h3_director.bat` |
    | 文生图 | LLaDA-Image | clone 官方仓库 | `start_llada_image.bat` |
+   | 文生图 | Qwen-Image-2.1 | `download_qwen_image.ps1` | `start_qwen_image.bat` |
 
 3. 打开 **推理节点**，把模式改成 `auto`，保存。
 4. 回到工坊选刚启动的引擎，先用 **480p / 5 秒** 试一条。
@@ -134,7 +135,7 @@ npm run dev
 | 文档 | 内容 |
 | --- | --- |
 | [使用说明](docs/usage.md) | 登录、指挥台、工坊、短剧、队列、作品库、节点、用户 |
-| [引擎与权重](docs/engines.md) | `paths.bat`、下载、启动、LLaDA、SGLang |
+| [引擎与权重](docs/engines.md) | `paths.bat`、下载、启动、LLaDA、Qwen-Image、SGLang |
 | [配置与局域网](docs/config.md) | `.env`、账号、CORS、备份、常见问题 |
 
 ## 目录
@@ -166,3 +167,4 @@ node capture-screenshots.mjs
 - [DiffSynth-Studio](https://github.com/modelscope/DiffSynth-Studio)
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI) · [FastH3 GGUF](https://huggingface.co/realrebelai/FastH3_GGUFs) · [Timeline Director](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector)
 - [LLaDA-Image](https://github.com/inclusionAI/LLaDA-Image)
+- [Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1)

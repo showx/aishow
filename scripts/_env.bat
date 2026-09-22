@@ -32,6 +32,9 @@ if defined COMFY_ROOT if not defined H3_PINKCHERRY_COMFY_ROOT set "H3_PINKCHERRY
 
 if defined MODELS_ROOT if not defined FASTH3_GGUF_ROOT set "FASTH3_GGUF_ROOT=%MODELS_ROOT%\fasth3-gguf"
 if defined MODELS_ROOT if not defined H3_PINKCHERRY_ROOT set "H3_PINKCHERRY_ROOT=%MODELS_ROOT%\pinkcherry-h3"
+if defined MODELS_ROOT if not defined QWEN_IMAGE_MODEL set "QWEN_IMAGE_MODEL=%MODELS_ROOT%\Qwen-Image-2.1"
+if defined MODELS_ROOT if not defined QWEN_IMAGE_OUT_DIR set "QWEN_IMAGE_OUT_DIR=%MODELS_ROOT%\aishow-qwen-image-out"
+if defined MODELS_ROOT if exist "%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe" if not defined QWEN_IMAGE_PYTHON set "QWEN_IMAGE_PYTHON=%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe"
 if defined MODELS_ROOT if not defined FASTH3_OUT_DIR set "FASTH3_OUT_DIR=%MODELS_ROOT%\aishow-fasth3-out"
 if defined MODELS_ROOT if not defined H3_PINKCHERRY_OUT_DIR set "H3_PINKCHERRY_OUT_DIR=%MODELS_ROOT%\aishow-pinkcherry-out"
 if defined MODELS_ROOT if not defined FASTH3_LOCAL_DIR if exist "%MODELS_ROOT%\FastVideo-Minimax-FastH3-Preview-v0.2\modular_model_index.json" set "FASTH3_LOCAL_DIR=%MODELS_ROOT%\FastVideo-Minimax-FastH3-Preview-v0.2"

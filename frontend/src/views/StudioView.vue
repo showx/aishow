@@ -29,7 +29,7 @@
       </div>
 
       <div class="field">
-        <label>{{ isLLada ? '画面提示' : '镜头提示' }}</label>
+        <label>{{ isImage ? '画面提示' : '镜头提示' }}</label>
         <textarea v-model="form.prompt" class="textarea" :placeholder="placeholder"></textarea>
         <div class="examples">
           <button v-for="ex in examples" :key="ex" class="pill click" @click="form.prompt = ex">{{ ex.slice(0, 18) }}…</button>
@@ -39,7 +39,10 @@
       <div class="media" v-if="needMedia">
         <DropZone v-if="needFirst" v-model="firstFrame" title="首帧" accept="image/*" kind="image" />
         <DropZone v-if="needLast" v-model="lastFrame" title="尾帧" accept="image/*" kind="image" />
-        <DropZone v-if="form.mode === 'i2i'" v-model="refImage" title="参考图" accept="image/*" kind="image" />
+        <DropZone v-if="form.mode === 'i2i' && !isQwenImage" v-model="refImage" title="参考图" accept="image/*" kind="image" />
+        <div v-if="form.mode === 'i2i' && isQwenImage" class="refs">
+          <DropZone v-model="refImages" title="参考图" accept="image/*" kind="image" multiple :max="10" />
+        </div>
         <div v-if="form.mode === 'ref2va'" class="refs">
           <DropZone v-model="refImages" title="参考图" accept="image/*" kind="image" multiple :max="9" />
         </div>
@@ -48,20 +51,24 @@
       </div>
 
       <div class="grid-2">
-        <div class="field" v-if="!isLLada">
+        <div class="field" v-if="!isImage">
           <label>时长 {{ form.duration }}s</label>
           <input v-model.number="form.duration" type="range" :min="minDuration" :max="maxDuration" step="1" />
           <div class="seg ticks">
             <button v-for="d in visibleDurations" :key="d" :class="{ active: form.duration === d }" @click="form.duration = d">{{ d }}s</button>
           </div>
         </div>
-        <div class="field" v-else>
+        <div class="field" v-else-if="isLLada">
           <label>档位</label>
           <div class="seg">
             <button :class="{ active: form.quality === 'turbo' }" @click="setLLadaQuality('turbo')">Turbo 4 步</button>
             <button :class="{ active: form.quality === 'base' }" @click="setLLadaQuality('base')">Base 50 步</button>
           </div>
           <div class="hint">Turbo 对应蒸馏权重；Base 对应 50 步高品质权重。边车加载的 checkpoint 应与档位一致。</div>
+        </div>
+        <div class="field" v-else>
+          <label>采样</label>
+          <div class="hint">Qwen-Image-2.1 官方默认 40 步，CFG 关闭（true_cfg=1）。24GB 建议先 1024。可在高级采样改 Steps / Guidance。</div>
         </div>
         <div class="field">
           <label>分辨率 {{ sizeHint }}</label>
@@ -86,7 +93,7 @@
 
       <details class="adv">
         <summary>高级采样</summary>
-        <div v-if="isLLada" class="grid-3">
+        <div v-if="isImage" class="grid-3">
           <div class="field"><label>Seed <button class="link" type="button" @click="rollSeed">随机</button></label><input v-model.number="form.seed" class="input" type="number"></div>
           <div class="field"><label>Steps</label><input v-model.number="form.steps" class="input" type="number"></div>
           <div class="field"><label>Guidance</label><input v-model.number="form.flow_shift" class="input" type="number" step="0.1"></div>
@@ -110,7 +117,7 @@
           <div class="field"><label>Steps</label><input class="input" type="number" :value="5" disabled></div>
           <div class="field"><label>优先级</label><input v-model.number="form.priority" class="input" type="number"></div>
         </div>
-        <label v-if="!isLLada" class="check">
+        <label v-if="!isImage" class="check">
           <input v-model="form.enhance_prompt" type="checkbox" />
           使用官方 H3-Context-IR 增强提示（需要 MiniMax Token）
         </label>
@@ -156,7 +163,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DropZone from '../components/DropZone.vue'
 import JobDeleteModal from '../components/JobDeleteModal.vue'
-import { api, canvasSize, engineName, isImageJob, resolutionLabel, resolutionPresets, statusLabel, textUnderstandingShort, type Job, type JobEngine, type JobMode } from '../api/http'
+import { api, canvasSize, engineName, isImageEngine, isImageJob, resolutionLabel, resolutionPresets, statusLabel, textUnderstandingShort, type Job, type JobEngine, type JobMode } from '../api/http'
 import { asEngine, randomSeed, useJobReuse } from '../composables/useJobReuse'
 import { useAppStore } from '../stores/app'
 
@@ -186,8 +193,9 @@ const engines = [
   { id: 'h3-director' as JobEngine, label: 'H3 Timeline Director' },
   { id: 'fasth3' as JobEngine, label: 'FastH3 本地' },
   { id: 'llada-image' as JobEngine, label: 'LLaDA-Image' },
+  { id: 'qwen-image' as JobEngine, label: 'Qwen-Image-2.1' },
 ]
-const enginePref: JobEngine[] = ['fasth3', 'h3-turbo', 'h3-pinkcherry-int8', 'h3', 'h3-director', 'h3-ref2va-int8', 'llada-image']
+const enginePref: JobEngine[] = ['fasth3', 'h3-turbo', 'h3-pinkcherry-int8', 'h3', 'h3-director', 'h3-ref2va-int8', 'qwen-image', 'llada-image']
 const userPickedEngine = ref(false)
 const autoPickedEngine = ref(false)
 const modes = [
@@ -202,7 +210,7 @@ const imageModes = [
   { id: 'i2i' as JobMode, label: '指令编辑' },
 ]
 const ratios = ['16:9', '9:16', '1:1', '4:3', '21:9', 'auto']
-const imageRatios = ['1:1', '16:9', '9:16', '4:3', '3:4']
+const imageRatios = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3']
 const durations = [2, 5, 8, 10, 15]
 const directorDurations = [5, 8, 10, 15, 20, 30]
 const fastDurations = [5, 8, 10, 15]
@@ -213,6 +221,11 @@ const fastResolutions = [
 const imageResolutions = [
   { short: 768, label: '768' },
   { short: 1024, label: '1024' },
+] as const
+const qwenResolutions = [
+  { short: 768, label: '768' },
+  { short: 1024, label: '1024' },
+  { short: 1536, label: '1536' },
 ] as const
 const videoExamples = [
   '夜色卧室：主人熟睡时，三只猫列队闯入吹奏微型铜管，随即若无其事离开。',
@@ -250,11 +263,13 @@ const engineOnline = computed(() => {
     'h3-ref2va-int8': false,
     'h3-director': false,
     'llada-image': false,
+    'qwen-image': false,
   }
   for (const ep of store.system?.endpoints || []) {
     if (!ep.healthy) continue
     const name = (ep.name || '').toLowerCase()
     if (name.includes('fasth3')) map.fasth3 = true
+    else if (name.includes('qwen-image') || name.includes('qwen image')) map['qwen-image'] = true
     else if (name.includes('llada')) map['llada-image'] = true
     else if (name.includes('pinkcherry')) map['h3-pinkcherry-int8'] = true
     else if (name.includes('director') || name.includes('timeline')) map['h3-director'] = true
@@ -297,8 +312,10 @@ const isRef2VAInt8 = computed(() => form.engine === 'h3-ref2va-int8')
 const isPinkCherry = computed(() => form.engine === 'h3-pinkcherry-int8')
 const isDirector = computed(() => form.engine === 'h3-director')
 const isLLada = computed(() => form.engine === 'llada-image')
+const isQwenImage = computed(() => form.engine === 'qwen-image')
+const isImage = computed(() => isImageEngine(form.engine))
 const visibleModes = computed(() => {
-  if (isLLada.value) return imageModes
+  if (isImage.value) return imageModes
   if (isFastH3.value) return modes.filter(m => m.id === 't2va')
   if (isRef2VAInt8.value) return modes.filter(m => m.id === 'ref2va')
   if (isDirector.value) return modes.filter(m => m.id === 't2va' || m.id === 'ref2va')
@@ -309,12 +326,13 @@ const visibleDurations = computed(() => {
   return (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) ? [2, 5, 8, 10, 15] : durations
 })
 const visibleResolutions = computed(() => {
+  if (isQwenImage.value) return qwenResolutions
   if (isLLada.value) return imageResolutions
   if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value || isDirector.value) return fastResolutions
   return resolutionPresets
 })
 const visibleRatios = computed(() => {
-  if (isLLada.value) return imageRatios
+  if (isImage.value) return imageRatios
   if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value || isDirector.value) return ratios.filter(r => r !== 'auto')
   return ratios
 })
@@ -332,6 +350,7 @@ const engineHint = computed(() => {
     : (autoSwitch.value
       ? '这个引擎还没加载，但可以使用：点「投入队列」即可，轮到时会自动启动。'
       : '这个引擎还没加载。先打开自动切换，或手动跑对应 bat，否则提交会失败。')
+  if (isQwenImage.value) return `Qwen-Image-2.1：7B 统一文生图 / 指令编辑，最多 10 张参考。本地权重约 33GB。24GB 默认 CPU offload，第一次读盘要几分钟。官方默认 40 步。${status}`
   if (isLLada.value) return `LLaDA-Image：开源文生图 / 指令编辑。本地 Turbo 权重约 46GB，第一次（或刚切过来）要读盘上 GPU，等几分钟是正常的。${status}`
   if (isFastH3.value) return `FastH3 GGUF Q4：只支持文生。${status}`
   if (isH3Turbo.value) return `H3 Turbo LoRA：NF4 底模 + lightx2v 4 步，文生 / 首尾帧。官方 Space 的未量化版约 72GB 显存，24GB 请用本仓库这条量化路径。${status}`
@@ -341,6 +360,7 @@ const engineHint = computed(() => {
   return `H3-Base NF4：文生 / 首尾帧。参考生成请改选「H3 Ref2VA INT8」或「H3 Timeline Director」。${status}`
 })
 const resolutionHint = computed(() => {
+  if (isQwenImage.value) return '官方表是 2048 档。24GB 先用 1024；1536 更吃显存。边长按 16 对齐。'
   if (isLLada.value) return '文生图边长需能被 16 整除；指令编辑需能被 32 整除。默认 1024。'
   if (isFastH3.value) return '训练分辨率是 768×1344 / 5 秒。24GB 建议先用 480p / 5 秒试一条。'
   if (isH3Turbo.value) return 'LoRA 按 768p 训练。24GB 先用 480p / 5 秒 / 4 步；768p 更吃显存。'
@@ -363,8 +383,8 @@ const submitLabel = computed(() => {
 const needFirst = computed(() => form.mode === 'i2va' || form.mode === 'fl2va')
 const needLast = computed(() => form.mode === 'l2va' || form.mode === 'fl2va')
 const needMedia = computed(() => form.mode !== 't2va' && form.mode !== 't2i')
-const examples = computed(() => isLLada.value ? imageExamples : videoExamples)
-const placeholder = computed(() => isLLada.value
+const examples = computed(() => isImage.value ? imageExamples : videoExamples)
+const placeholder = computed(() => isImage.value
   ? '写画面：主体、风格、光线、构图；编辑模式写你要改什么。'
   : '用镜头语言写：主体、运动、光、声音与时间点。')
 const preview = computed(() => store.jobs.slice(0, 8))
@@ -401,6 +421,16 @@ function setEngine(id: JobEngine) {
     form.short_edge = 1024
     form.enhance_prompt = false
     setLLadaQuality(form.quality === 'base' ? 'base' : 'turbo')
+    return
+  }
+  if (id === 'qwen-image') {
+    if (form.mode !== 't2i' && form.mode !== 'i2i') form.mode = 't2i'
+    form.aspect_ratio = '1:1'
+    form.short_edge = 1024
+    form.enhance_prompt = false
+    form.quality = 'base'
+    form.steps = 40
+    form.flow_shift = 1
     return
   }
   if (form.mode === 't2i' || form.mode === 'i2i') form.mode = 't2va'
@@ -572,7 +602,7 @@ async function applyHistory(id: string, useEnhanced = false) {
     reusedEnhanced.value = enhanced && enhanced !== job.prompt ? enhanced : ''
     form.prompt = useEnhanced && reusedEnhanced.value ? reusedEnhanced.value : job.prompt
     form.duration = job.duration || 5
-    form.aspect_ratio = job.aspect_ratio || (form.engine === 'llada-image' ? '1:1' : '16:9')
+    form.aspect_ratio = job.aspect_ratio || (isImageEngine(form.engine) ? '1:1' : '16:9')
     form.short_edge = job.short_edge
     form.seed = job.seed
     form.steps = job.steps
@@ -630,7 +660,7 @@ onMounted(() => {
 
 async function submit() {
   if (!form.prompt.trim()) {
-    store.flash(isLLada.value ? '请填写画面提示' : '请填写镜头提示')
+    store.flash(isImage.value ? '请填写画面提示' : '请填写镜头提示')
     return
   }
   if (needFirst.value && !firstFrame.value) {
@@ -645,8 +675,8 @@ async function submit() {
     store.flash('参考生成至少需要一种素材')
     return
   }
-  if (form.mode === 'i2i' && !refImage.value) {
-    store.flash('指令编辑需要一张参考图')
+  if (form.mode === 'i2i' && !refImage.value && refImages.value.length === 0) {
+    store.flash('指令编辑需要至少一张参考图')
     return
   }
   if ((form.engine === 'fasth3' || form.engine === 'h3-max') && form.mode !== 't2va') {
@@ -676,9 +706,14 @@ async function submit() {
       const up = await uploadIf(lastFrame.value)
       conditions.push({ upload_id: up?.id, type: 'image', role: 'keyframe', frame_index: -1 })
     }
-    if (form.mode === 'i2i' && refImage.value) {
-      const up = await uploadIf(refImage.value)
-      conditions.push({ upload_id: up?.id, type: 'image', role: 'reference' })
+    if (form.mode === 'i2i') {
+      const files = isQwenImage.value
+        ? refImages.value.slice(0, 10)
+        : (refImage.value ? [refImage.value] : [])
+      for (const file of files) {
+        const up = await uploadIf(file)
+        if (up?.id) conditions.push({ upload_id: up.id, type: 'image', role: 'reference' })
+      }
     }
     if (form.mode === 'ref2va') {
       for (const file of refImages.value.slice(0, 9)) {

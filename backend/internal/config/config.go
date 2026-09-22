@@ -30,6 +30,7 @@ type Config struct {
 	PinkCherryComfyURL string
 	H3DirectorURL      string
 	LLaDAImageURL      string
+	QwenImageURL       string
 	ChatURL            string
 	ChatModel          string
 	ChatAPIToken       string
@@ -72,6 +73,7 @@ func Load() Config {
 		PinkCherryComfyURL: strings.TrimRight(env("AISHOW_PINKCHERRY_COMFY_URL", "http://127.0.0.1:8189"), "/"),
 		H3DirectorURL:      strings.TrimRight(env("AISHOW_H3_DIRECTOR_URL", "http://127.0.0.1:30014"), "/"),
 		LLaDAImageURL:      strings.TrimRight(env("AISHOW_LLADA_IMAGE_URL", "http://127.0.0.1:30020"), "/"),
+		QwenImageURL:       strings.TrimRight(env("AISHOW_QWEN_IMAGE_URL", "http://127.0.0.1:30021"), "/"),
 		ChatURL:            strings.TrimRight(env("AISHOW_CHAT_URL", "http://127.0.0.1:11434"), "/"),
 		ChatModel:          env("AISHOW_CHAT_MODEL", "qwen3.5:4b"),
 		ChatAPIToken:       env("AISHOW_CHAT_API_TOKEN", ""),

@@ -28,6 +28,7 @@ const (
 	EngineH3PinkCherryInt8 = "h3-pinkcherry-int8"
 	EngineH3Director       = "h3-director"
 	EngineLLadaImage       = "llada-image"
+	EngineQwenImage        = "qwen-image"
 
 	RoleAdmin = "admin"
 	RoleUser  = "user"
@@ -205,6 +206,7 @@ type SettingsPayload struct {
 	H3PinkCherryURL   string   `json:"h3_pinkcherry_url"`
 	H3DirectorURL     string   `json:"h3_director_url"`
 	LLaDAImageURL     string   `json:"llada_image_url"`
+	QwenImageURL      string   `json:"qwen_image_url"`
 	ChatURL           string   `json:"chat_url"`
 	ChatModel         string   `json:"chat_model"`
 	ChatAPIToken      string   `json:"chat_api_token"`
@@ -281,7 +283,9 @@ func CanonicalEngine(engine string) string {
 		return EngineH3PinkCherryInt8
 	case IsH3Director(engine):
 		return EngineH3Director
-	case IsImageEngine(engine):
+	case IsQwenImage(engine):
+		return EngineQwenImage
+	case IsLLadaImage(engine):
 		return EngineLLadaImage
 	default:
 		return EngineH3
@@ -302,6 +306,8 @@ func EngineAliases(engine string) []string {
 		return []string{EngineH3Director, "h3-timeline-director", "timeline-director", "director"}
 	case EngineLLadaImage:
 		return []string{EngineLLadaImage, "llada", "llada_image"}
+	case EngineQwenImage:
+		return []string{EngineQwenImage, "qwen-image-2.1", "qwen_image", "qwenimage"}
 	default:
 		return []string{EngineH3, "h3-base", "h3_base", "nf4"}
 	}
@@ -321,6 +327,8 @@ func EngineLabel(engine string) string {
 		return "H3 Timeline Director"
 	case EngineLLadaImage:
 		return "LLaDA-Image"
+	case EngineQwenImage:
+		return "Qwen-Image-2.1"
 	default:
 		return "H3-Base"
 	}
@@ -371,13 +379,33 @@ func IsH3Director(engine string) bool {
 	}
 }
 
-func IsImageEngine(engine string) bool {
-	switch engine {
-	case EngineLLadaImage, "llada", "llada_image":
+func IsLLadaImage(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineLLadaImage, "llada", "llada_image", "lladaimage":
 		return true
 	default:
 		return false
 	}
+}
+
+func IsQwenImage(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineQwenImage, "qwen-image-2.1", "qwen_image", "qwenimage", "qwen-image21":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsImageEngine(engine string) bool {
+	return IsLLadaImage(engine) || IsQwenImage(engine)
+}
+
+func ImageSidecarURL(engine string, snap SettingsPayload) string {
+	if IsQwenImage(engine) {
+		return strings.TrimRight(snap.QwenImageURL, "/")
+	}
+	return strings.TrimRight(snap.LLaDAImageURL, "/")
 }
 
 func IsImageMode(mode string) bool {

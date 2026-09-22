@@ -21,6 +21,11 @@ rem set "LLADA_REPO=C:\path\to\LLaDA-Image"
 rem set "LLADA_MODEL=%MODELS_ROOT%\LLaDA-Image-Turbo"
 rem set "LLADA_PYTHON=%COMFY_ROOT%\python_embeded\python.exe"
 
+rem ---- Qwen-Image-2.1（生图才需要；独立 venv，不要复用 ComfyUI / LLaDA Python）----
+rem set "QWEN_IMAGE_MODEL=%MODELS_ROOT%\Qwen-Image-2.1"
+rem set "QWEN_IMAGE_PYTHON=%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe"
+rem set "QWEN_IMAGE_OFFLOAD=1"
+
 rem ---- 可选：缓存、代理、aria2 ----
 rem set "AISHOW_TMP=%H3_ROOT%\tmp"
 rem set "HF_HOME=%MODELS_ROOT%\huggingface"
