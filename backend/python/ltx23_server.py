@@ -31,6 +31,32 @@ if str(_here) not in sys.path:
 
 from aishow_paths import env_path, media_root
 
+
+def _force_pread_safetensors() -> None:
+    """Windows mmap of the ~46GB monolith returns tensors whose PyTorch storage
+    has no valid data pointer (``get_tensor`` raises, or the process faults).
+    ``pread`` copies each tensor into owned memory. Applied before ltx imports
+    so ``from safetensors import safe_open`` picks up the wrapper.
+    """
+    if os.name != "nt":
+        return
+    import safetensors
+
+    if getattr(safetensors, "_aishow_pread", False):
+        return
+    original = safetensors.safe_open
+
+    def safe_open(filename, framework, device="cpu", *args, backend=None, **kwargs):
+        if backend in (None, "mmap"):
+            backend = "pread"
+        return original(filename, framework, device, *args, backend=backend, **kwargs)
+
+    safetensors.safe_open = safe_open
+    safetensors._aishow_pread = True
+
+
+_force_pread_safetensors()
+
 HOST = os.environ.get("LTX23_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LTX23_PORT", "30023"))
 CHECKPOINT = os.environ.get("LTX23_CHECKPOINT", "")
