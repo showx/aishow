@@ -1,11 +1,11 @@
 @echo off
 setlocal
-rem LLaDA-Image sidecar. Set LLADA_REPO / LLADA_MODEL in scripts\paths.bat.
+rem LLaDA-Image sidecar. Repo defaults to %MODELS_ROOT%\LLaDA-Image.
 rem Default Turbo. Switch to Base: set LLADA_MODEL=inclusionAI/LLaDA-Image
 
 call "%~dp0_env.bat"
 if not defined LLADA_REPO (
-  echo 缺少 LLADA_REPO。请在 scripts\paths.bat 里填写 LLaDA-Image 源码目录。
+  echo 缺少 MODELS_ROOT。LLaDA 源码应放在 MODELS_ROOT\LLaDA-Image。
   if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )

@@ -112,7 +112,7 @@ npm run dev
    copy scripts\paths.example.bat scripts\paths.bat
    ```
 
-   至少填写 `H3_ROOT`、`COMFY_ROOT`、`MODELS_ROOT`。
+   只填写 `MODELS_ROOT`。H3、ComfyUI、DiffSynth、LLaDA、缓存和边车成品都放在这个目录里。
 
 2. 按显存下载权重、启动对应 `scripts\start_*.bat`。24GB 常见起点：
 

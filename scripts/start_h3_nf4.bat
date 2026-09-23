@@ -2,7 +2,7 @@
 setlocal
 call "%~dp0_env.bat"
 if not defined H3_ROOT (
-  echo 缺少 H3_ROOT。请复制 scripts\paths.example.bat 为 scripts\paths.bat 并填写本机路径。
+  echo 缺少 MODELS_ROOT。请复制 scripts\paths.example.bat 为 scripts\paths.bat，并把 MiniMax-H3 放在该目录下。
   if /i not "%AISHOW_HEADLESS%"=="1" pause
   exit /b 1
 )

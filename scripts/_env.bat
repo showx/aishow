@@ -11,6 +11,20 @@ if not defined AISHOW_MEDIA_ROOT set "AISHOW_MEDIA_ROOT=%AISHOW_ROOT%\backend\da
 if not defined H3_MEDIA_ROOT set "H3_MEDIA_ROOT=%AISHOW_MEDIA_ROOT%"
 if not defined LLADA_MEDIA_ROOT set "LLADA_MEDIA_ROOT=%AISHOW_MEDIA_ROOT%"
 
+rem One folder to copy: weights, ComfyUI, DiffSynth, LLaDA, caches, and sidecar output.
+if defined MODELS_ROOT if not defined H3_ROOT set "H3_ROOT=%MODELS_ROOT%\MiniMax-H3"
+if defined MODELS_ROOT if not defined LLADA_REPO set "LLADA_REPO=%MODELS_ROOT%\LLaDA-Image"
+if defined MODELS_ROOT if not defined LLADA_MODEL set "LLADA_MODEL=%MODELS_ROOT%\LLaDA-Image-Turbo"
+if defined MODELS_ROOT if not defined HF_HOME set "HF_HOME=%MODELS_ROOT%\huggingface"
+if defined MODELS_ROOT if not defined MODELSCOPE_CACHE set "MODELSCOPE_CACHE=%MODELS_ROOT%\modelscope"
+if defined MODELS_ROOT if not defined H3_OUT_DIR set "H3_OUT_DIR=%MODELS_ROOT%\out\h3"
+if defined MODELS_ROOT if not defined FASTH3_OUT_DIR set "FASTH3_OUT_DIR=%MODELS_ROOT%\out\fasth3"
+if defined MODELS_ROOT if not defined H3_PINKCHERRY_OUT_DIR set "H3_PINKCHERRY_OUT_DIR=%MODELS_ROOT%\out\pinkcherry"
+if defined MODELS_ROOT if not defined QWEN_IMAGE_OUT_DIR set "QWEN_IMAGE_OUT_DIR=%MODELS_ROOT%\out\qwen-image"
+if defined MODELS_ROOT if not defined HUNYUAN_OUT_DIR set "HUNYUAN_OUT_DIR=%MODELS_ROOT%\out\hunyuan-video"
+if defined MODELS_ROOT if not defined LTX23_OUT_DIR set "LTX23_OUT_DIR=%MODELS_ROOT%\out\ltx23"
+if defined MODELS_ROOT if not defined LLADA_OUT_DIR set "LLADA_OUT_DIR=%MODELS_ROOT%\out\llada"
+
 if defined H3_ROOT if not defined H3_NF4_DIR set "H3_NF4_DIR=%H3_ROOT%\models\MiniMax-H3-NF4"
 if defined H3_ROOT if not defined H3_PROCESSOR set "H3_PROCESSOR=%H3_ROOT%\models\MiniMax-H3\FL2VA\processor"
 if defined H3_ROOT if not defined H3_LORA_DIR set "H3_LORA_DIR=%H3_ROOT%\models\loras"
@@ -40,10 +54,7 @@ if defined MODELS_ROOT if not defined LTX23_ROOT set "LTX23_ROOT=%MODELS_ROOT%\L
 if defined MODELS_ROOT if not defined LTX23_GEMMA set "LTX23_GEMMA=%MODELS_ROOT%\gemma-3-12b-it-qat-q4_0-unquantized"
 if defined MODELS_ROOT if not defined LTX23_REPO set "LTX23_REPO=%MODELS_ROOT%\LTX-2"
 if defined LTX23_REPO if exist "%LTX23_REPO%\.venv\Scripts\python.exe" if not defined LTX23_PYTHON set "LTX23_PYTHON=%LTX23_REPO%\.venv\Scripts\python.exe"
-if defined MODELS_ROOT if not defined QWEN_IMAGE_OUT_DIR set "QWEN_IMAGE_OUT_DIR=%MODELS_ROOT%\aishow-qwen-image-out"
 if defined MODELS_ROOT if exist "%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe" if not defined QWEN_IMAGE_PYTHON set "QWEN_IMAGE_PYTHON=%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe"
-if defined MODELS_ROOT if not defined FASTH3_OUT_DIR set "FASTH3_OUT_DIR=%MODELS_ROOT%\aishow-fasth3-out"
-if defined MODELS_ROOT if not defined H3_PINKCHERRY_OUT_DIR set "H3_PINKCHERRY_OUT_DIR=%MODELS_ROOT%\aishow-pinkcherry-out"
 if defined MODELS_ROOT if not defined FASTH3_LOCAL_DIR if exist "%MODELS_ROOT%\FastVideo-Minimax-FastH3-Preview-v0.2\modular_model_index.json" set "FASTH3_LOCAL_DIR=%MODELS_ROOT%\FastVideo-Minimax-FastH3-Preview-v0.2"
 
 if not defined FASTH3_OUT_DIR set "FASTH3_OUT_DIR=%AISHOW_ROOT%\backend\data\sidecar-out\fasth3"

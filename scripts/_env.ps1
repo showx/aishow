@@ -30,12 +30,22 @@ if (-not (Get-AishowEnv "AISHOW_MEDIA_ROOT")) {
 }
 if (-not (Get-AishowEnv "H3_MEDIA_ROOT")) { $env:H3_MEDIA_ROOT = $env:AISHOW_MEDIA_ROOT }
 
-$H3Root = Get-AishowEnv "H3_ROOT"
 $ModelsRoot = Get-AishowEnv "MODELS_ROOT"
+if ($ModelsRoot) {
+    if (-not (Get-AishowEnv "H3_ROOT")) { $env:H3_ROOT = Join-Path $ModelsRoot "MiniMax-H3" }
+    if (-not (Get-AishowEnv "LLADA_REPO")) { $env:LLADA_REPO = Join-Path $ModelsRoot "LLaDA-Image" }
+    if (-not (Get-AishowEnv "LLADA_MODEL")) { $env:LLADA_MODEL = Join-Path $ModelsRoot "LLaDA-Image-Turbo" }
+    if (-not (Get-AishowEnv "HF_HOME")) { $env:HF_HOME = Join-Path $ModelsRoot "huggingface" }
+    if (-not (Get-AishowEnv "MODELSCOPE_CACHE")) { $env:MODELSCOPE_CACHE = Join-Path $ModelsRoot "modelscope" }
+}
+$H3Root = Get-AishowEnv "H3_ROOT"
 if ($H3Root) {
     if (-not (Get-AishowEnv "H3_NF4_DIR")) { $env:H3_NF4_DIR = Join-Path $H3Root "models\MiniMax-H3-NF4" }
+    if (-not (Get-AishowEnv "H3_PROCESSOR")) { $env:H3_PROCESSOR = Join-Path $H3Root "models\MiniMax-H3\FL2VA\processor" }
     if (-not (Get-AishowEnv "H3_LORA_DIR")) { $env:H3_LORA_DIR = Join-Path $H3Root "models\loras" }
     if (-not (Get-AishowEnv "COMFY_ROOT")) { $env:COMFY_ROOT = Join-Path $H3Root "ComfyUI_windows_portable" }
+    if (-not (Get-AishowEnv "DIFFSYNTH_ROOT")) { $env:DIFFSYNTH_ROOT = Join-Path $H3Root "repo\DiffSynth-Studio-main" }
+    if (-not (Get-AishowEnv "AISHOW_TMP")) { $env:AISHOW_TMP = Join-Path $H3Root "tmp" }
 }
 if ($ModelsRoot) {
     if (-not (Get-AishowEnv "FASTH3_GGUF_ROOT")) { $env:FASTH3_GGUF_ROOT = Join-Path $ModelsRoot "fasth3-gguf" }

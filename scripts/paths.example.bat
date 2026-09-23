@@ -1,43 +1,31 @@
 @echo off
-rem 复制为本目录的 paths.bat 后按本机修改。不要提交 paths.bat。
-rem 启动脚本和下载脚本都会加载这份文件。
+rem Copy to paths.bat and edit. Do not commit paths.bat.
+rem
+rem Set only MODELS_ROOT. Weights, ComfyUI, DiffSynth, the LLaDA repo,
+rem virtualenvs, Hugging Face / ModelScope caches, and sidecar output
+rem all live in this one folder. Copy the folder to move machines.
+rem
+rem   MiniMax-H3\                          H3 / ComfyUI / DiffSynth
+rem   fasth3-gguf\  pinkcherry-h3\
+rem   Qwen-Image-2.1\  qwen-image-venv\
+rem   HunyuanVideo-1.5-480p-t2v\  HunyuanVideo-1.5-480p-i2v\  hunyuan-video-venv\
+rem   LTX-2.3\  LTX-2\  gemma-3-12b-it-qat-q4_0-unquantized\
+rem   LLaDA-Image\  LLaDA-Image-Turbo\
+rem   huggingface\  modelscope\  out\
 
-rem ---- 必填：本机工具与权重根目录 ----
-set "H3_ROOT=C:\path\to\MiniMax-H3"
-set "COMFY_ROOT=%H3_ROOT%\ComfyUI_windows_portable"
-set "DIFFSYNTH_ROOT=%H3_ROOT%\repo\DiffSynth-Studio-main"
 set "MODELS_ROOT=C:\path\to\models"
 
-rem ---- 常用派生（一般不用改）----
-rem set "H3_NF4_DIR=%H3_ROOT%\models\MiniMax-H3-NF4"
-rem set "H3_PROCESSOR=%H3_ROOT%\models\MiniMax-H3\FL2VA\processor"
-rem set "H3_LORA_DIR=%H3_ROOT%\models\loras"
-rem set "FASTH3_GGUF_ROOT=%MODELS_ROOT%\fasth3-gguf"
-rem set "H3_PINKCHERRY_ROOT=%MODELS_ROOT%\pinkcherry-h3"
-rem set "FASTH3_LOCAL_DIR=%MODELS_ROOT%\FastVideo-Minimax-FastH3-Preview-v0.2"
-
-rem ---- LLaDA-Image（生图才需要）----
-rem set "LLADA_REPO=C:\path\to\LLaDA-Image"
+rem Derived by scripts\_env.bat. Uncomment only to override.
+rem set "H3_ROOT=%MODELS_ROOT%\MiniMax-H3"
+rem set "COMFY_ROOT=%H3_ROOT%\ComfyUI_windows_portable"
+rem set "DIFFSYNTH_ROOT=%H3_ROOT%\repo\DiffSynth-Studio-main"
+rem set "LLADA_REPO=%MODELS_ROOT%\LLaDA-Image"
 rem set "LLADA_MODEL=%MODELS_ROOT%\LLaDA-Image-Turbo"
-rem set "LLADA_PYTHON=%COMFY_ROOT%\python_embeded\python.exe"
-
-rem ---- HunyuanVideo-1.5 / LTX-2.3（视频才需要）----
-rem set "HUNYUAN_T2V_MODEL=%MODELS_ROOT%\HunyuanVideo-1.5-480p-t2v"
-rem set "HUNYUAN_I2V_MODEL=%MODELS_ROOT%\HunyuanVideo-1.5-480p-i2v"
-rem set "HUNYUAN_PYTHON=%MODELS_ROOT%\hunyuan-video-venv\Scripts\python.exe"
-rem set "LTX23_ROOT=%MODELS_ROOT%\LTX-2.3"
-rem set "LTX23_GEMMA=%MODELS_ROOT%\gemma-3-12b-it-qat-q4_0-unquantized"
-rem set "LTX23_REPO=%MODELS_ROOT%\LTX-2"
-rem set "LTX23_PYTHON=%LTX23_REPO%\.venv\Scripts\python.exe"
-
-rem ---- Qwen-Image-2.1（生图才需要；独立 venv，不要复用 ComfyUI / LLaDA Python）----
-rem set "QWEN_IMAGE_MODEL=%MODELS_ROOT%\Qwen-Image-2.1"
-rem set "QWEN_IMAGE_PYTHON=%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe"
-rem set "QWEN_IMAGE_OFFLOAD=1"
-
-rem ---- 可选：缓存、代理、aria2 ----
-rem set "AISHOW_TMP=%H3_ROOT%\tmp"
 rem set "HF_HOME=%MODELS_ROOT%\huggingface"
 rem set "MODELSCOPE_CACHE=%MODELS_ROOT%\modelscope"
+rem set "QWEN_IMAGE_OFFLOAD=1"
+
+rem Optional tools that do not belong in the models folder.
 rem set "ARIA2C=C:\path\to\aria2c.exe"
 rem set "AISHOW_DOWNLOAD_PROXY=http://127.0.0.1:7897"
+rem set "HF_TOKEN="

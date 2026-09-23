@@ -38,6 +38,9 @@ def media_root() -> Path:
 
 
 def sidecar_out(name: str) -> Path:
+    root = env_str("MODELS_ROOT")
+    if root:
+        return Path(root) / "out" / name
     return BACKEND / "data" / "sidecar-out" / name
 
 

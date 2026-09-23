@@ -12,15 +12,20 @@
 copy scripts\paths.example.bat scripts\paths.bat
 ```
 
-至少填写：
+只填写 `MODELS_ROOT`。换机器时拷走这一个目录即可。`scripts\_env.bat` 会从它推出其余路径：
 
-| 变量 | 含义 |
+| 位置 | 内容 |
 | --- | --- |
-| `H3_ROOT` | MiniMax-H3 / DiffSynth / ComfyUI 所在根目录 |
-| `COMFY_ROOT` | ComfyUI 便携版目录（含 `python_embeded`） |
-| `MODELS_ROOT` | FastH3 GGUF、PinkCherry、LLaDA、Qwen-Image 等权重根目录 |
+| `MiniMax-H3\` | ComfyUI 便携版、DiffSynth、H3 NF4 / processor / LoRA、临时缓存 |
+| `fasth3-gguf\`、`pinkcherry-h3\` | FastH3 GGUF、PinkCherry |
+| `Qwen-Image-2.1\`、`qwen-image-venv\` | Qwen-Image 权重和独立 Python |
+| `HunyuanVideo-1.5-480p-t2v\`、`...-i2v\`、`hunyuan-video-venv\` | HunyuanVideo |
+| `LTX-2.3\`、`LTX-2\`、`gemma-3-12b-it-qat-q4_0-unquantized\` | LTX-2.3 与 Gemma |
+| `LLaDA-Image\`、`LLaDA-Image-Turbo\` | LLaDA 源码和 Turbo 权重 |
+| `huggingface\`、`modelscope\` | 下载缓存 |
+| `out\` | 各边车成品 |
 
-可选：`LLADA_REPO`、`LLADA_MODEL`、`ARIA2C`、`AISHOW_DOWNLOAD_PROXY`。
+可选：`ARIA2C`、`AISHOW_DOWNLOAD_PROXY`、`HF_TOKEN`。某份目录不在默认位置时，再单独覆盖 `H3_ROOT` 或 `LLADA_REPO`。
 
 下载脚本默认直连 Hugging Face。只有填了 `AISHOW_DOWNLOAD_PROXY` 才会走代理。装了 [aria2](https://github.com/aria2/aria2/releases) 并写上 `ARIA2C` 会快很多。
 
@@ -82,18 +87,13 @@ FastH3 GGUF、Ref2VA INT8 和 Timeline Director 共用另一套：权重在 `FAS
 
 ## LLaDA-Image
 
-```bash
-git clone https://github.com/inclusionAI/LLaDA-Image.git
-```
-
-在 `scripts\paths.bat` 里设置：
+把官方仓库克隆到 models 目录里：
 
 ```bat
-set "LLADA_REPO=C:\path\to\LLaDA-Image"
-set "LLADA_MODEL=%MODELS_ROOT%\LLaDA-Image-Turbo"
+git clone https://github.com/inclusionAI/LLaDA-Image.git %MODELS_ROOT%\LLaDA-Image
 ```
 
-然后：
+权重放在 `%MODELS_ROOT%\LLaDA-Image-Turbo`。然后：
 
 ```bat
 scripts\start_llada_image.bat
@@ -129,12 +129,7 @@ Gemma 若返回 401，先到模型页接受协议并设置 `HF_TOKEN`，再重�
 
 统一文生图 / 指令编辑，官方 40 步。需要独立 Python（`transformers>=5.17` + git 版 diffusers），**不要**复用 ComfyUI 或 LLaDA 的解释器。
 
-```bat
-rem scripts\paths.bat
-set "QWEN_IMAGE_MODEL=%MODELS_ROOT%\Qwen-Image-2.1"
-set "QWEN_IMAGE_PYTHON=%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe"
-set "QWEN_IMAGE_OFFLOAD=1"
-```
+下载脚本会把权重放到 `%MODELS_ROOT%\Qwen-Image-2.1`，虚拟环境放到 `%MODELS_ROOT%\qwen-image-venv`。24GB 在 `paths.bat` 里保持 `QWEN_IMAGE_OFFLOAD=1`。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\download_qwen_image.ps1
