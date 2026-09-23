@@ -123,6 +123,8 @@ npm run dev
    | 参考图生成 | H3 Ref2VA INT8 | `download_h3_ref2va.ps1` | `start_h3_ref2va_int8.bat` |
    | 二采加速文生 / 参考 | H3 Timeline Director | `download_h3_latent_upscaler.ps1` | `start_h3_director.bat` |
    | 文生图 | LLaDA-Image | clone 官方仓库 | `start_llada_image.bat` |
+   | 文生 / 首帧 | HunyuanVideo-1.5 | `download_hunyuan_video.ps1` | `start_hunyuan_video.bat` |
+   | 文生 / 首帧，带声音 | LTX-2.3 | `download_ltx23.ps1` | `start_ltx23.bat` |
    | 文生图 | Qwen-Image-2.1 | `download_qwen_image.ps1` | `start_qwen_image.bat` |
 
 3. 打开 **推理节点**，把模式改成 `auto`，保存。
@@ -168,3 +170,5 @@ node capture-screenshots.mjs
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI) · [FastH3 GGUF](https://huggingface.co/realrebelai/FastH3_GGUFs) · [Timeline Director](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector)
 - [LLaDA-Image](https://github.com/inclusionAI/LLaDA-Image)
 - [Qwen-Image-2.1](https://huggingface.co/Qwen/Qwen-Image-2.1)
+- [HunyuanVideo-1.5](https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5)
+- [LTX-2.3](https://huggingface.co/Lightricks/LTX-2.3)

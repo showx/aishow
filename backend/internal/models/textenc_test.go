@@ -19,6 +19,8 @@ func TestDescribeTextEncoder(t *testing.T) {
 		{"llada-image", "", "LLaDA-Image", "LLaDA-Image 6B"},
 		{"qwen-image", "", "Qwen-Image-2.1", "Qwen-Image-2.1"},
 		{"qwen-image", "Qwen-Image-2.1", "Qwen-Image-2.1", "Qwen-Image-2.1"},
+		{"hunyuan-video", "", "Qwen2.5-VL-7B", "HunyuanVideo-1.5 Qwen2.5-VL"},
+		{"ltx-2.3", "", "Gemma-3-12B", "LTX-2.3 Gemma 3"},
 	}
 	for _, c := range cases {
 		id, label := DescribeTextEncoder(c.engine, c.file)
@@ -37,6 +39,12 @@ func TestPromptRewriterFor(t *testing.T) {
 	}
 	if got := PromptRewriterFor("qwen-image", true); got != "" {
 		t.Fatalf("qwen should not rewrite: %q", got)
+	}
+	if got := PromptRewriterFor("hunyuan-video", true); got != "" {
+		t.Fatalf("hunyuan should not rewrite: %q", got)
+	}
+	if got := PromptRewriterFor("ltx-2.3", true); got != "" {
+		t.Fatalf("ltx should not rewrite: %q", got)
 	}
 }
 

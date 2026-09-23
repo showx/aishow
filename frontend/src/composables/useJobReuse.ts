@@ -11,6 +11,8 @@ export function asEngine(engine?: string, mode?: string): JobEngine {
   if (engine === 'h3-director') return 'h3-director'
   if (engine === 'llada-image') return 'llada-image'
   if (engine === 'qwen-image') return 'qwen-image'
+  if (engine === 'hunyuan-video') return 'hunyuan-video'
+  if (engine === 'ltx-2.3') return 'ltx-2.3'
   if (mode === 'ref2va') return 'h3-ref2va-int8'
   return 'h3'
 }

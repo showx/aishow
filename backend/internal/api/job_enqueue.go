@@ -54,6 +54,9 @@ func (s *Server) enqueueJob(userID string, in models.CreateJobRequest) (*models.
 	if (engine == models.EngineH3 || models.IsH3Turbo(engine)) && mode == models.ModeRef2VA {
 		return nil, badRequest("参考生成请改选「H3 Ref2VA INT8」或「H3 Timeline Director」；H3-Base / Turbo LoRA 只承接文生和首尾帧")
 	}
+	if (models.IsHunyuanVideo(engine) || models.IsLTX23(engine)) && mode != models.ModeT2VA && mode != models.ModeI2VA {
+		return nil, badRequest(models.EngineLabel(engine) + " 只支持文生和首帧图生")
+	}
 	if models.IsImageEngine(engine) && !models.IsImageMode(mode) {
 		return nil, badRequest(models.EngineLabel(engine) + " 仅支持文生图与指令编辑")
 	}
@@ -174,6 +177,35 @@ func (s *Server) enqueueJob(userID string, in models.CreateJobRequest) (*models.
 			if in.Steps > 50 {
 				in.Steps = 50
 			}
+		}
+		if models.IsHunyuanVideo(engine) || models.IsLTX23(engine) {
+			if in.Duration > 10 {
+				in.Duration = 10
+			}
+			if in.AspectRatio == "" || in.AspectRatio == "auto" {
+				in.AspectRatio = "16:9"
+			}
+			in.EnhancePrompt = false
+		}
+		if models.IsHunyuanVideo(engine) {
+			in.ShortEdge = 480
+			if in.Steps == 0 || in.Steps == 50 || in.Steps == 4 || in.Steps == 8 || in.Steps == 20 || in.Steps == 40 {
+				in.Steps = 30
+			}
+			if in.Steps < 10 {
+				in.Steps = 10
+			}
+			if in.Steps > 50 {
+				in.Steps = 50
+			}
+		}
+		if models.IsLTX23(engine) {
+			if in.ShortEdge >= 640 {
+				in.ShortEdge = 768
+			} else {
+				in.ShortEdge = 512
+			}
+			in.Steps = 8
 		}
 		if models.IsH3PinkCherryInt8(engine) {
 			if in.ShortEdge >= 640 {

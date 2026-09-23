@@ -26,6 +26,8 @@ const (
 	KeyH3Director        = "h3_director_url"
 	KeyLLaDAImage        = "llada_image_url"
 	KeyQwenImage         = "qwen_image_url"
+	KeyHunyuanVideo      = "hunyuan_video_url"
+	KeyLTX23             = "ltx23_url"
 	KeyChatURL           = "chat_url"
 	KeyChatModel         = "chat_model"
 	KeyChatToken         = "chat_api_token"
@@ -55,6 +57,8 @@ func Seed(db *gorm.DB, cfg config.Config) error {
 		KeyH3Director:        cfg.H3DirectorURL,
 		KeyLLaDAImage:        cfg.LLaDAImageURL,
 		KeyQwenImage:         cfg.QwenImageURL,
+		KeyHunyuanVideo:      cfg.HunyuanVideoURL,
+		KeyLTX23:             cfg.LTX23URL,
 		KeyChatURL:           cfg.ChatURL,
 		KeyChatModel:         cfg.ChatModel,
 		KeyChatToken:         cfg.ChatAPIToken,
@@ -123,6 +127,8 @@ func Snapshot(db *gorm.DB, cfg config.Config) models.SettingsPayload {
 		H3DirectorURL:     Get(db, KeyH3Director, cfg.H3DirectorURL),
 		LLaDAImageURL:     Get(db, KeyLLaDAImage, cfg.LLaDAImageURL),
 		QwenImageURL:      Get(db, KeyQwenImage, cfg.QwenImageURL),
+		HunyuanVideoURL:   Get(db, KeyHunyuanVideo, cfg.HunyuanVideoURL),
+		LTX23URL:          Get(db, KeyLTX23, cfg.LTX23URL),
 		ChatURL:           Get(db, KeyChatURL, cfg.ChatURL),
 		ChatModel:         Get(db, KeyChatModel, cfg.ChatModel),
 		ChatAPIToken:      chatMasked,
@@ -153,6 +159,8 @@ func Apply(db *gorm.DB, in models.SettingsPayload) error {
 		KeyH3Director:        strings.TrimRight(strings.TrimSpace(in.H3DirectorURL), "/"),
 		KeyLLaDAImage:        strings.TrimRight(strings.TrimSpace(in.LLaDAImageURL), "/"),
 		KeyQwenImage:         strings.TrimRight(strings.TrimSpace(in.QwenImageURL), "/"),
+		KeyHunyuanVideo:      strings.TrimRight(strings.TrimSpace(in.HunyuanVideoURL), "/"),
+		KeyLTX23:             strings.TrimRight(strings.TrimSpace(in.LTX23URL), "/"),
 		KeyChatURL:           strings.TrimRight(strings.TrimSpace(in.ChatURL), "/"),
 		KeyChatModel:         strings.TrimSpace(in.ChatModel),
 		KeyTTSURL:            strings.TrimRight(strings.TrimSpace(in.TTSURL), "/"),

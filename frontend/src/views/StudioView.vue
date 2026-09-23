@@ -194,8 +194,10 @@ const engines = [
   { id: 'fasth3' as JobEngine, label: 'FastH3 本地' },
   { id: 'llada-image' as JobEngine, label: 'LLaDA-Image' },
   { id: 'qwen-image' as JobEngine, label: 'Qwen-Image-2.1' },
+  { id: 'hunyuan-video' as JobEngine, label: 'HunyuanVideo-1.5' },
+  { id: 'ltx-2.3' as JobEngine, label: 'LTX-2.3' },
 ]
-const enginePref: JobEngine[] = ['fasth3', 'h3-turbo', 'h3-pinkcherry-int8', 'h3', 'h3-director', 'h3-ref2va-int8', 'qwen-image', 'llada-image']
+const enginePref: JobEngine[] = ['fasth3', 'h3-turbo', 'h3-pinkcherry-int8', 'h3', 'h3-director', 'h3-ref2va-int8', 'hunyuan-video', 'ltx-2.3', 'qwen-image', 'llada-image']
 const userPickedEngine = ref(false)
 const autoPickedEngine = ref(false)
 const modes = [
@@ -214,6 +216,11 @@ const imageRatios = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3']
 const durations = [2, 5, 8, 10, 15]
 const directorDurations = [5, 8, 10, 15, 20, 30]
 const fastDurations = [5, 8, 10, 15]
+const openVideoDurations = [2, 5, 8, 10]
+const ltxResolutions = [
+  { short: 512, label: '512' },
+  { short: 768, label: '768' },
+] as const
 const fastResolutions = [
   { short: 480, label: '480p' },
   { short: 768, label: '768p' },
@@ -264,11 +271,15 @@ const engineOnline = computed(() => {
     'h3-director': false,
     'llada-image': false,
     'qwen-image': false,
+    'hunyuan-video': false,
+    'ltx-2.3': false,
   }
   for (const ep of store.system?.endpoints || []) {
     if (!ep.healthy) continue
     const name = (ep.name || '').toLowerCase()
     if (name.includes('fasth3')) map.fasth3 = true
+    else if (name.includes('hunyuan')) map['hunyuan-video'] = true
+    else if (name.includes('ltx')) map['ltx-2.3'] = true
     else if (name.includes('qwen-image') || name.includes('qwen image')) map['qwen-image'] = true
     else if (name.includes('llada')) map['llada-image'] = true
     else if (name.includes('pinkcherry')) map['h3-pinkcherry-int8'] = true
@@ -313,9 +324,13 @@ const isPinkCherry = computed(() => form.engine === 'h3-pinkcherry-int8')
 const isDirector = computed(() => form.engine === 'h3-director')
 const isLLada = computed(() => form.engine === 'llada-image')
 const isQwenImage = computed(() => form.engine === 'qwen-image')
+const isHunyuan = computed(() => form.engine === 'hunyuan-video')
+const isLTX = computed(() => form.engine === 'ltx-2.3')
+const isOpenVideo = computed(() => isHunyuan.value || isLTX.value)
 const isImage = computed(() => isImageEngine(form.engine))
 const visibleModes = computed(() => {
   if (isImage.value) return imageModes
+  if (isOpenVideo.value) return modes.filter(m => m.id === 't2va' || m.id === 'i2va')
   if (isFastH3.value) return modes.filter(m => m.id === 't2va')
   if (isRef2VAInt8.value) return modes.filter(m => m.id === 'ref2va')
   if (isDirector.value) return modes.filter(m => m.id === 't2va' || m.id === 'ref2va')
@@ -323,21 +338,24 @@ const visibleModes = computed(() => {
 })
 const visibleDurations = computed(() => {
   if (isDirector.value) return directorDurations
+  if (isOpenVideo.value) return openVideoDurations
   return (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value) ? [2, 5, 8, 10, 15] : durations
 })
 const visibleResolutions = computed(() => {
   if (isQwenImage.value) return qwenResolutions
   if (isLLada.value) return imageResolutions
+  if (isHunyuan.value) return [{ short: 480, label: '480p' }]
+  if (isLTX.value) return ltxResolutions
   if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value || isDirector.value) return fastResolutions
   return resolutionPresets
 })
 const visibleRatios = computed(() => {
   if (isImage.value) return imageRatios
-  if (isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value || isDirector.value) return ratios.filter(r => r !== 'auto')
+  if (isOpenVideo.value || isFastH3.value || isH3Turbo.value || isRef2VAInt8.value || isPinkCherry.value || isDirector.value) return ratios.filter(r => r !== 'auto')
   return ratios
 })
 const minDuration = computed(() => 2)
-const maxDuration = computed(() => isDirector.value ? 30 : 15)
+const maxDuration = computed(() => isDirector.value ? 30 : isOpenVideo.value ? 10 : 15)
 const autoSwitch = computed(() => {
   if (store.settings?.auto_switch_engine !== undefined) return store.settings.auto_switch_engine
   if (store.system?.auto_switch_engine !== undefined) return store.system.auto_switch_engine
@@ -350,6 +368,8 @@ const engineHint = computed(() => {
     : (autoSwitch.value
       ? '这个引擎还没加载，但可以使用：点「投入队列」即可，轮到时会自动启动。'
       : '这个引擎还没加载。先打开自动切换，或手动跑对应 bat，否则提交会失败。')
+  if (isHunyuan.value) return `HunyuanVideo-1.5：8.3B 文生。本机已接 480p 文生权重，24GB 默认 CPU offload。首帧图生要另下 480p-i2v。先用 5 秒 / 30 步。${status}`
+  if (isLTX.value) return `LTX-2.3：蒸馏 8 步，自带同步声音。24GB 用 fp8-cast + CPU offload。短边 512 先试，768 更吃内存。需要 Gemma 3 文本编码器。${status}`
   if (isQwenImage.value) return `Qwen-Image-2.1：7B 统一文生图 / 指令编辑，最多 10 张参考。本地权重约 33GB。24GB 默认 CPU offload，第一次读盘要几分钟。官方默认 40 步。${status}`
   if (isLLada.value) return `LLaDA-Image：开源文生图 / 指令编辑。本地 Turbo 权重约 46GB，第一次（或刚切过来）要读盘上 GPU，等几分钟是正常的。${status}`
   if (isFastH3.value) return `FastH3 GGUF Q4：只支持文生。${status}`
@@ -360,6 +380,8 @@ const engineHint = computed(() => {
   return `H3-Base NF4：文生 / 首尾帧。参考生成请改选「H3 Ref2VA INT8」或「H3 Timeline Director」。${status}`
 })
 const resolutionHint = computed(() => {
+  if (isHunyuan.value) return '这套权重是 480p。边长按 16 对齐，5 秒大约 121 帧、24fps。'
+  if (isLTX.value) return '两阶段蒸馏：先半分辨率再 x2。边长按 64 对齐。24GB 先用短边 512 / 5 秒。'
   if (isQwenImage.value) return '官方表是 2048 档。24GB 先用 1024；1536 更吃显存。边长按 16 对齐。'
   if (isLLada.value) return '文生图边长需能被 16 整除；指令编辑需能被 32 整除。默认 1024。'
   if (isFastH3.value) return '训练分辨率是 768×1344 / 5 秒。24GB 建议先用 480p / 5 秒试一条。'
@@ -421,6 +443,21 @@ function setEngine(id: JobEngine) {
     form.short_edge = 1024
     form.enhance_prompt = false
     setLLadaQuality(form.quality === 'base' ? 'base' : 'turbo')
+    return
+  }
+  if (id === 'hunyuan-video' || id === 'ltx-2.3') {
+    if (form.mode !== 't2va' && form.mode !== 'i2va') form.mode = 't2va'
+    form.enhance_prompt = false
+    form.quality = 'lossless'
+    form.aspect_ratio = form.aspect_ratio === 'auto' ? '16:9' : form.aspect_ratio
+    if (form.duration > 10) form.duration = 5
+    if (id === 'hunyuan-video') {
+      form.short_edge = 480
+      form.steps = 30
+    } else {
+      form.short_edge = form.short_edge >= 640 ? 768 : 512
+      form.steps = 8
+    }
     return
   }
   if (id === 'qwen-image') {

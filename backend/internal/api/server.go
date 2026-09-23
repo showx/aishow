@@ -174,6 +174,8 @@ func (s *Server) system(c *gin.Context) {
 	fh := inspect(snap.FastH3URL)
 	ll := inspect(snap.LLaDAImageURL)
 	qw := inspect(snap.QwenImageURL)
+	hy := inspect(snap.HunyuanVideoURL)
+	lx := inspect(snap.LTX23URL)
 	ch := s.chat.Inspect(snap.ChatURL, settings.ChatToken(s.db, s.cfg))
 	tt := s.tts.Inspect(snap.TTSURL, settings.TTSToken(s.db, s.cfg))
 	endpoint := func(name, url string, h models.SidecarHealth) models.EndpointHealth {
@@ -196,6 +198,8 @@ func (s *Server) system(c *gin.Context) {
 		endpoint("FastH3 · GGUF", snap.FastH3URL, fh),
 		endpoint("LLaDA-Image", snap.LLaDAImageURL, ll),
 		endpoint("Qwen-Image-2.1", snap.QwenImageURL, qw),
+		endpoint("HunyuanVideo-1.5", snap.HunyuanVideoURL, hy),
+		endpoint("LTX-2.3", snap.LTX23URL, lx),
 		endpoint("本地 Chat", snap.ChatURL, ch),
 		endpoint("本地 TTS", snap.TTSURL, tt),
 	}
@@ -603,6 +607,10 @@ func normalizeEngine(raw string) string {
 		return models.EngineLLadaImage
 	case models.EngineQwenImage, "qwen-image-2.1", "qwen_image", "qwenimage", "qwen-image21":
 		return models.EngineQwenImage
+	case models.EngineHunyuanVideo, "hunyuan", "hunyuanvideo", "hunyuan-video-1.5", "hunyuanvideo-1.5":
+		return models.EngineHunyuanVideo
+	case models.EngineLTX23, "ltx", "ltx23", "ltx-2", "ltx2.3", "ltx-2.3-distilled":
+		return models.EngineLTX23
 	default:
 		return ""
 	}

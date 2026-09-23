@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	readyTimeout  = 12 * time.Minute
+	readyTimeout  = 40 * time.Minute
 	stopTimeout   = 20 * time.Second
 	vramCooldown  = 12 * time.Second
 	probeInterval = 2 * time.Second
@@ -410,6 +410,10 @@ func (m *Manager) endpoint(engine string, snap models.SettingsPayload) string {
 		return strings.TrimRight(snap.LLaDAImageURL, "/")
 	case models.EngineQwenImage:
 		return strings.TrimRight(snap.QwenImageURL, "/")
+	case models.EngineHunyuanVideo:
+		return strings.TrimRight(snap.HunyuanVideoURL, "/")
+	case models.EngineLTX23:
+		return strings.TrimRight(snap.LTX23URL, "/")
 	default:
 		return strings.TrimRight(snap.SGLANGFL2VAURL, "/")
 	}
@@ -571,6 +575,8 @@ func exclusiveEngines() []string {
 		models.EngineFastH3,
 		models.EngineLLadaImage,
 		models.EngineQwenImage,
+		models.EngineHunyuanVideo,
+		models.EngineLTX23,
 	}
 }
 
@@ -590,6 +596,10 @@ func engineSpec(engine string) (spec, bool) {
 		return spec{ID: models.EngineLLadaImage, Label: "LLaDA-Image", Script: "start_llada_image.bat"}, true
 	case models.EngineQwenImage:
 		return spec{ID: models.EngineQwenImage, Label: "Qwen-Image-2.1", Script: "start_qwen_image.bat"}, true
+	case models.EngineHunyuanVideo:
+		return spec{ID: models.EngineHunyuanVideo, Label: "HunyuanVideo-1.5", Script: "start_hunyuan_video.bat"}, true
+	case models.EngineLTX23:
+		return spec{ID: models.EngineLTX23, Label: "LTX-2.3", Script: "start_ltx23.bat"}, true
 	case models.EngineH3:
 		return spec{ID: models.EngineH3, Label: "H3-Base", Script: "start_h3_nf4.bat"}, true
 	default:

@@ -35,6 +35,8 @@ copy scripts\paths.example.bat scripts\paths.bat
 | H3 Timeline Director | 24GB 可跑 | 文生 / 参考，SelfLift 二采 | `download_h3_latent_upscaler.ps1` | `start_h3_director.bat` | `30014` / Comfy `8188` |
 | FastH3 GGUF Q4 | 24GB 推荐 | 仅文生，4 步 | `download_fasth3_gguf.ps1` | `start_fasth3_gguf.bat` | `8000` / Comfy `8188` |
 | LLaDA-Image | 视 Turbo / Base | 文生图 / 指令编辑 | 见下方 | `start_llada_image.bat` | `30020` |
+| HunyuanVideo-1.5 | 480p 约 50GB×2，24GB 开 offload | 文生 / 首帧图生 | `download_hunyuan_video.ps1` | `start_hunyuan_video.bat` | `30022` |
+| LTX-2.3 | 蒸馏约 46GB + Gemma，24GB 用 fp8 offload | 文生 / 首帧，带同步声音 | `download_ltx23.ps1` | `start_ltx23.bat` | `30023` |
 | Qwen-Image-2.1 | 约 33GB 权重，24GB 开 offload | 文生图 / 指令编辑（最多 10 张参考） | `download_qwen_image.ps1` | `start_qwen_image.bat` | `30021` |
 | FastH3 全量 bf16 | 远超 24GB | 仅文生 | `download_fasth3.ps1` | `start_fasth3.bat` | `8000` |
 | 官方 SGLang H3-Base | 多卡 | 文生 / 首尾帧 / 参考 | Hugging Face `MiniMaxAI/MiniMax-H3` | 见下方 | `30010` / `30011` |
@@ -98,6 +100,30 @@ scripts\start_llada_image.bat
 ```
 
 默认 Turbo（4 步）。要高品质 Base，把 `LLADA_MODEL` 指到 `inclusionAI/LLaDA-Image` 的本地目录，工坊档位也选 Base。
+
+## HunyuanVideo-1.5
+
+8.3B 文生 / 图生。本仓库下的是 Diffusers 480p 文生和图生两套权重，24GB 用 CPU offload。图生只在投首帧任务时才装进显存。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\download_hunyuan_video.ps1
+powershell -ExecutionPolicy Bypass -File scripts\setup_hunyuan_video.ps1
+scripts\start_hunyuan_video.bat
+```
+
+边车 `http://127.0.0.1:30022`。工坊固定 480p，先用 5 秒 / 30 步。
+
+## LTX-2.3
+
+蒸馏 1.1（8 步）加 x2 空间超分，文本编码器是门控的 Gemma 3。24GB 启动脚本默认 `fp8-cast` 和 CPU offload。不下载 46GB 的 dev 全量权重。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\download_ltx23.ps1
+powershell -ExecutionPolicy Bypass -File scripts\setup_ltx23.ps1
+scripts\start_ltx23.bat
+```
+
+Gemma 若返回 401，先到模型页接受协议并设置 `HF_TOKEN`，再重跑下载。边车 `http://127.0.0.1:30023`。短边先用 512。
 
 ## Qwen-Image-2.1
 

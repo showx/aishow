@@ -31,6 +31,8 @@ type Config struct {
 	H3DirectorURL      string
 	LLaDAImageURL      string
 	QwenImageURL       string
+	HunyuanVideoURL    string
+	LTX23URL           string
 	ChatURL            string
 	ChatModel          string
 	ChatAPIToken       string
@@ -74,6 +76,8 @@ func Load() Config {
 		H3DirectorURL:      strings.TrimRight(env("AISHOW_H3_DIRECTOR_URL", "http://127.0.0.1:30014"), "/"),
 		LLaDAImageURL:      strings.TrimRight(env("AISHOW_LLADA_IMAGE_URL", "http://127.0.0.1:30020"), "/"),
 		QwenImageURL:       strings.TrimRight(env("AISHOW_QWEN_IMAGE_URL", "http://127.0.0.1:30021"), "/"),
+		HunyuanVideoURL:    strings.TrimRight(env("AISHOW_HUNYUAN_VIDEO_URL", "http://127.0.0.1:30022"), "/"),
+		LTX23URL:           strings.TrimRight(env("AISHOW_LTX23_URL", "http://127.0.0.1:30023"), "/"),
 		ChatURL:            strings.TrimRight(env("AISHOW_CHAT_URL", "http://127.0.0.1:11434"), "/"),
 		ChatModel:          env("AISHOW_CHAT_MODEL", "qwen3.5:4b"),
 		ChatAPIToken:       env("AISHOW_CHAT_API_TOKEN", ""),

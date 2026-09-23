@@ -61,7 +61,7 @@ func TextEncoderBasename(raw string) string {
 }
 
 func PromptRewriterFor(engine string, enhance bool) string {
-	if enhance && !IsImageEngine(engine) {
+	if enhance && !IsImageEngine(engine) && !IsHunyuanVideo(engine) && !IsLTX23(engine) {
 		return PromptRewriterContextIR
 	}
 	return ""
@@ -120,6 +120,16 @@ func DescribeTextEncoder(engine, filename string) (id, label string) {
 			return "Qwen-Image-2.1", "Qwen-Image-2.1"
 		}
 		return name, "Qwen-Image-2.1"
+	case EngineHunyuanVideo:
+		if name == "" {
+			return "Qwen2.5-VL-7B", "HunyuanVideo-1.5 Qwen2.5-VL"
+		}
+		return name, "HunyuanVideo-1.5 Qwen2.5-VL"
+	case EngineLTX23:
+		if name == "" {
+			return "Gemma-3-12B", "LTX-2.3 Gemma 3"
+		}
+		return name, "LTX-2.3 Gemma 3"
 	default:
 		if name == "" {
 			return "minimax-h3-text-encoder-nf4.safetensors", "Qwen3-VL 32B NF4"

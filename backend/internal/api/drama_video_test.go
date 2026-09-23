@@ -70,6 +70,22 @@ func TestPlanDramaVideoDirectorRefsWithoutShotImage(t *testing.T) {
 	}
 }
 
+func TestPlanDramaVideoHunyuanKeepsSingleFirstFrame(t *testing.T) {
+	p := &models.DramaProject{
+		VideoEngine:    models.EngineHunyuanVideo,
+		ContinueEngine: models.EngineHunyuanVideo,
+	}
+	shot := models.DramaShot{ImageUploadID: "shot-img", ContinueFromPrev: true}
+	prev := &models.DramaShot{LastFrameUploadID: "last-frame"}
+	engine, mode, conds := planDramaVideo(p, shot, prev)
+	if engine != models.EngineHunyuanVideo || mode != models.ModeI2VA {
+		t.Fatalf("engine=%s mode=%s", engine, mode)
+	}
+	if len(conds) != 1 || conds[0].UploadID != "last-frame" {
+		t.Fatalf("conds=%+v", conds)
+	}
+}
+
 func hasUpload(conds []models.AssetCondition, id string) bool {
 	for _, c := range conds {
 		if c.UploadID == id {

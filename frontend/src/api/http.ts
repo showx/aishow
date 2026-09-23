@@ -1,6 +1,6 @@
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type JobMode = 't2va' | 'i2va' | 'l2va' | 'fl2va' | 'ref2va' | 't2i' | 'i2i'
-export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-turbo' | 'h3-ref2va-int8' | 'h3-pinkcherry-int8' | 'h3-director' | 'llada-image' | 'qwen-image'
+export type JobEngine = 'h3' | 'fasth3' | 'h3-max' | 'h3-turbo' | 'h3-ref2va-int8' | 'h3-pinkcherry-int8' | 'h3-director' | 'llada-image' | 'qwen-image' | 'hunyuan-video' | 'ltx-2.3'
 
 export interface JobAsset {
   id: string
@@ -136,6 +136,8 @@ export interface SettingsPayload {
   h3_director_url?: string
   llada_image_url: string
   qwen_image_url?: string
+  hunyuan_video_url?: string
+  ltx23_url?: string
   chat_url?: string
   chat_model?: string
   chat_api_token?: string
@@ -332,6 +334,8 @@ export const engineLabel: Record<JobEngine, string> = {
   'h3-director': 'H3 Timeline Director',
   'llada-image': 'LLaDA-Image',
   'qwen-image': 'Qwen-Image-2.1',
+  'hunyuan-video': 'HunyuanVideo-1.5',
+  'ltx-2.3': 'LTX-2.3',
 }
 
 export function engineName(engine?: string) {
@@ -342,6 +346,8 @@ export function engineName(engine?: string) {
   if (engine === 'h3-director') return engineLabel['h3-director']
   if (engine === 'llada-image') return engineLabel['llada-image']
   if (engine === 'qwen-image') return engineLabel['qwen-image']
+  if (engine === 'hunyuan-video') return engineLabel['hunyuan-video']
+  if (engine === 'ltx-2.3') return engineLabel['ltx-2.3']
   return engineLabel.h3
 }
 
@@ -352,6 +358,8 @@ export function isImageEngine(engine?: string) {
 export function fallbackTextEncoder(engine?: string) {
   if (engine === 'llada-image') return 'LLaDA-Image 6B'
   if (engine === 'qwen-image') return 'Qwen-Image-2.1'
+  if (engine === 'hunyuan-video') return 'HunyuanVideo-1.5 Qwen2.5-VL'
+  if (engine === 'ltx-2.3') return 'LTX-2.3 Gemma 3'
   if (engine === 'h3-pinkcherry-int8') return 'PinkCherry Qwen3-VL 32B'
   if (engine === 'fasth3' || engine === 'h3-max' || engine === 'h3-ref2va-int8' || engine === 'h3-director') return 'Qwen3-VL 32B 量化'
   return 'Qwen3-VL 32B NF4'

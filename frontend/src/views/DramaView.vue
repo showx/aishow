@@ -423,6 +423,8 @@ const videoEngines: { id: JobEngine; label: string }[] = [
   { id: 'h3-pinkcherry-int8', label: 'PinkCherry' },
   { id: 'h3-director', label: 'Director' },
   { id: 'fasth3', label: 'FastH3' },
+  { id: 'hunyuan-video', label: 'Hunyuan' },
+  { id: 'ltx-2.3', label: 'LTX-2.3' },
 ]
 const continueEngines: { id: JobEngine; label: string }[] = [
   { id: 'h3-ref2va-int8', label: 'Ref2VA' },
@@ -430,6 +432,8 @@ const continueEngines: { id: JobEngine; label: string }[] = [
   { id: 'h3', label: 'H3 首帧' },
   { id: 'h3-turbo', label: 'Turbo 首帧' },
   { id: 'h3-pinkcherry-int8', label: 'PinkCherry 首帧' },
+  { id: 'hunyuan-video', label: 'Hunyuan 首帧' },
+  { id: 'ltx-2.3', label: 'LTX 首帧' },
 ]
 
 const storyboardReady = computed(() => shots.value.length > 0 && shots.value.every(s => !!(s.scene?.trim() || s.image_prompt?.trim())))
@@ -459,7 +463,7 @@ const videoHint = computed(() => {
   if (videoUsesImageRefs.value) {
     return 'Director / Ref2VA 会把本镜出图和角色本一起送进模型（最多 9 张）。续写再加上一镜成片。左右方向键切镜。'
   }
-  return 'H3 / Turbo / PinkCherry 用首尾帧，带不了角色本里的额外图。续写会抽上一镜尾帧。左右方向键切镜。'
+  return 'H3 / Turbo / PinkCherry 用首尾帧。Hunyuan / LTX 只用一张首帧，续写抽上一镜尾帧。这些引擎带不了角色本里的额外图。左右方向键切镜。'
 })
 
 watch(() => store.jobs.map(j => `${j.id}:${j.status}:${j.progress}`).join('|'), () => {

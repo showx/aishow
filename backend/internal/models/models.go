@@ -29,6 +29,8 @@ const (
 	EngineH3Director       = "h3-director"
 	EngineLLadaImage       = "llada-image"
 	EngineQwenImage        = "qwen-image"
+	EngineHunyuanVideo     = "hunyuan-video"
+	EngineLTX23            = "ltx-2.3"
 
 	RoleAdmin = "admin"
 	RoleUser  = "user"
@@ -207,6 +209,8 @@ type SettingsPayload struct {
 	H3DirectorURL     string   `json:"h3_director_url"`
 	LLaDAImageURL     string   `json:"llada_image_url"`
 	QwenImageURL      string   `json:"qwen_image_url"`
+	HunyuanVideoURL   string   `json:"hunyuan_video_url"`
+	LTX23URL          string   `json:"ltx23_url"`
 	ChatURL           string   `json:"chat_url"`
 	ChatModel         string   `json:"chat_model"`
 	ChatAPIToken      string   `json:"chat_api_token"`
@@ -285,6 +289,10 @@ func CanonicalEngine(engine string) string {
 		return EngineH3Director
 	case IsQwenImage(engine):
 		return EngineQwenImage
+	case IsHunyuanVideo(engine):
+		return EngineHunyuanVideo
+	case IsLTX23(engine):
+		return EngineLTX23
 	case IsLLadaImage(engine):
 		return EngineLLadaImage
 	default:
@@ -308,6 +316,10 @@ func EngineAliases(engine string) []string {
 		return []string{EngineLLadaImage, "llada", "llada_image"}
 	case EngineQwenImage:
 		return []string{EngineQwenImage, "qwen-image-2.1", "qwen_image", "qwenimage"}
+	case EngineHunyuanVideo:
+		return []string{EngineHunyuanVideo, "hunyuan", "hunyuanvideo", "hunyuan-video-1.5"}
+	case EngineLTX23:
+		return []string{EngineLTX23, "ltx", "ltx23", "ltx-2", "ltx2.3"}
 	default:
 		return []string{EngineH3, "h3-base", "h3_base", "nf4"}
 	}
@@ -329,6 +341,10 @@ func EngineLabel(engine string) string {
 		return "LLaDA-Image"
 	case EngineQwenImage:
 		return "Qwen-Image-2.1"
+	case EngineHunyuanVideo:
+		return "HunyuanVideo-1.5"
+	case EngineLTX23:
+		return "LTX-2.3"
 	default:
 		return "H3-Base"
 	}
@@ -397,6 +413,24 @@ func IsQwenImage(engine string) bool {
 	}
 }
 
+func IsHunyuanVideo(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineHunyuanVideo, "hunyuan", "hunyuanvideo", "hunyuan-video-1.5", "hunyuanvideo-1.5":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsLTX23(engine string) bool {
+	switch strings.ToLower(strings.TrimSpace(engine)) {
+	case EngineLTX23, "ltx", "ltx23", "ltx-2", "ltx2.3", "ltx-2.3-distilled":
+		return true
+	default:
+		return false
+	}
+}
+
 func IsImageEngine(engine string) bool {
 	return IsLLadaImage(engine) || IsQwenImage(engine)
 }
@@ -425,9 +459,18 @@ func SupportsRef2VA(engine string) bool {
 	return IsH3Ref2VAInt8(engine) || IsH3Director(engine)
 }
 
-func SupportsFirstFrame(engine string) bool {
+func SupportsBridge(engine string) bool {
 	switch CanonicalEngine(engine) {
 	case EngineH3, EngineH3Turbo, EngineH3PinkCherryInt8:
+		return true
+	default:
+		return false
+	}
+}
+
+func SupportsFirstFrame(engine string) bool {
+	switch CanonicalEngine(engine) {
+	case EngineH3, EngineH3Turbo, EngineH3PinkCherryInt8, EngineHunyuanVideo, EngineLTX23:
 		return true
 	default:
 		return false

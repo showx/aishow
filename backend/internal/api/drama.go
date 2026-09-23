@@ -792,7 +792,7 @@ func planDramaVideo(p *models.DramaProject, shot models.DramaShot, prev *models.
 			if prev != nil {
 				last = strings.TrimSpace(prev.LastFrameUploadID)
 			}
-			if last != "" && shot.ImageUploadID != "" {
+			if last != "" && shot.ImageUploadID != "" && models.SupportsBridge(engine) {
 				lastIdx := -1
 				return engine, models.ModeFL2VA, []models.AssetCondition{
 					{UploadID: last, Role: "keyframe", Type: "image", FrameIndex: &zero},

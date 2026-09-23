@@ -168,7 +168,7 @@ func (w *Worker) process(job *models.Job) error {
 	mode := strings.ToLower(snap.InferenceMode)
 
 	prompt := job.Prompt
-	if job.EnhancePrompt && !isImageSidecar(job.Engine) {
+	if job.EnhancePrompt && !isImageSidecar(job.Engine) && !models.IsHunyuanVideo(job.Engine) && !models.IsLTX23(job.Engine) {
 		if err := w.queue.Update(job, map[string]any{"stage": "提示增强", "progress": 12}); err != nil {
 			return err
 		}
@@ -207,6 +207,12 @@ func (w *Worker) process(job *models.Job) error {
 			return w.mock(job)
 		}
 		return w.processFastH3(job, snap, prompt)
+	}
+	if models.IsHunyuanVideo(job.Engine) || models.IsLTX23(job.Engine) {
+		if mode == "mock" {
+			return w.mock(job)
+		}
+		return w.processOpenVideo(job, snap, prompt, conditions)
 	}
 	if mode == "mock" {
 		return w.mock(job)
@@ -358,6 +364,53 @@ func (w *Worker) processFastH3(job *models.Job, snap models.SettingsPayload, pro
 	w.mergeSidecarTextEncoder(job, created.TextEncoder, created.TextEncoderLabel)
 	_ = w.queue.Update(job, map[string]any{"remote_id": created.ID, "stage": "FastH3 4-step 采样", "progress": 28})
 	w.queue.Log(job.ID, "info", fmt.Sprintf("FastH3 任务 %s · %dx%d · %d 帧", created.ID, width, height, frames))
+	return w.waitRemote(job, endpoint, created.ID)
+}
+
+func (w *Worker) processOpenVideo(job *models.Job, snap models.SettingsPayload, prompt string, conditions []sglang.Condition) error {
+	label := models.EngineLabel(job.Engine)
+	endpoint := ""
+	modelName := ""
+	switch {
+	case models.IsHunyuanVideo(job.Engine):
+		endpoint = strings.TrimSpace(snap.HunyuanVideoURL)
+		modelName = "HunyuanVideo-1.5"
+	case models.IsLTX23(job.Engine):
+		endpoint = strings.TrimSpace(snap.LTX23URL)
+		modelName = "LTX-2.3"
+	}
+	if endpoint == "" {
+		return fmt.Errorf("未配置 %s 节点地址", label)
+	}
+	task := job.Mode
+	if task != models.ModeI2VA {
+		task = models.ModeT2VA
+	}
+	req := sglang.VideoRequest{
+		Model:               modelName,
+		Prompt:              prompt,
+		Seconds:             job.Duration,
+		Task:                task,
+		Conditions:          conditions,
+		NumOutputsPerPrompt: 1,
+		NumInferenceSteps:   job.Steps,
+		Seed:                job.Seed,
+		Target: sglang.Target{
+			ShortEdge:       job.ShortEdge,
+			AspectRatio:     job.AspectRatio,
+			DurationSeconds: job.Duration,
+		},
+	}
+	if err := w.queue.Update(job, map[string]any{"stage": "提交 " + label, "progress": 22}); err != nil {
+		return err
+	}
+	created, err := w.sglang.Create(endpoint, req)
+	if err != nil {
+		return fmt.Errorf("提交 %s 失败: %w", label, err)
+	}
+	w.mergeSidecarTextEncoder(job, created.TextEncoder, created.TextEncoderLabel)
+	_ = w.queue.Update(job, map[string]any{"remote_id": created.ID, "stage": "扩散采样", "progress": 28})
+	w.queue.Log(job.ID, "info", label+" 任务 "+created.ID)
 	return w.waitRemote(job, endpoint, created.ID)
 }
 

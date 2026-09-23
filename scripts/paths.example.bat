@@ -21,6 +21,15 @@ rem set "LLADA_REPO=C:\path\to\LLaDA-Image"
 rem set "LLADA_MODEL=%MODELS_ROOT%\LLaDA-Image-Turbo"
 rem set "LLADA_PYTHON=%COMFY_ROOT%\python_embeded\python.exe"
 
+rem ---- HunyuanVideo-1.5 / LTX-2.3（视频才需要）----
+rem set "HUNYUAN_T2V_MODEL=%MODELS_ROOT%\HunyuanVideo-1.5-480p-t2v"
+rem set "HUNYUAN_I2V_MODEL=%MODELS_ROOT%\HunyuanVideo-1.5-480p-i2v"
+rem set "HUNYUAN_PYTHON=%MODELS_ROOT%\hunyuan-video-venv\Scripts\python.exe"
+rem set "LTX23_ROOT=%MODELS_ROOT%\LTX-2.3"
+rem set "LTX23_GEMMA=%MODELS_ROOT%\gemma-3-12b-it-qat-q4_0-unquantized"
+rem set "LTX23_REPO=%MODELS_ROOT%\LTX-2"
+rem set "LTX23_PYTHON=%LTX23_REPO%\.venv\Scripts\python.exe"
+
 rem ---- Qwen-Image-2.1（生图才需要；独立 venv，不要复用 ComfyUI / LLaDA Python）----
 rem set "QWEN_IMAGE_MODEL=%MODELS_ROOT%\Qwen-Image-2.1"
 rem set "QWEN_IMAGE_PYTHON=%MODELS_ROOT%\qwen-image-venv\Scripts\python.exe"

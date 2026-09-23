@@ -3,7 +3,7 @@
     <section class="panel form" v-if="form">
       <div class="intro">
         <h2>对接 MiniMax-H3</h2>
-        <p>本控制面不在本机加载权重，而是调度 H3-Base NF4、H3 Turbo LoRA、H3 PinkCherry INT8、H3 Ref2VA INT8、H3 Timeline Director、本地 FastH3、LLaDA-Image 或 Qwen-Image-2.1。PinkCherry 是单独一套（权重目录 + ComfyUI 8189），不要和 FastH3 / Ref2VA / Director 的 8188 混用。打开「排队时自动切换模型」后，可以混着堆队列：工位会等当前引擎跑完，再停旧模型、启新模型。</p>
+        <p>本控制面不在本机加载权重，而是调度 H3-Base NF4、H3 Turbo LoRA、H3 PinkCherry INT8、H3 Ref2VA INT8、H3 Timeline Director、本地 FastH3、HunyuanVideo-1.5、LTX-2.3、LLaDA-Image 或 Qwen-Image-2.1。PinkCherry 是单独一套（权重目录 + ComfyUI 8189），不要和 FastH3 / Ref2VA / Director 的 8188 混用。打开「排队时自动切换模型」后，可以混着堆队列：工位会等当前引擎跑完，再停旧模型、启新模型。</p>
         <p>每条任务会记下文字理解用了哪个编码器（以及是否走了 H3-Context-IR 提示改写），片库参数和队列日志里都能看到，方便对照「提示词 vs 成片动作」。</p>
       </div>
 
@@ -85,6 +85,14 @@
         <div class="field">
           <label>Qwen-Image-2.1 地址</label>
           <input v-model="form.qwen_image_url" class="input" placeholder="http://127.0.0.1:30021" />
+        </div>
+        <div class="field">
+          <label>HunyuanVideo-1.5 地址</label>
+          <input v-model="form.hunyuan_video_url" class="input" placeholder="http://127.0.0.1:30022" />
+        </div>
+        <div class="field">
+          <label>LTX-2.3 地址</label>
+          <input v-model="form.ltx23_url" class="input" placeholder="http://127.0.0.1:30023" />
         </div>
         <div class="field">
           <label>本地 Chat 地址</label>
@@ -262,6 +270,8 @@ onMounted(async () => {
   if (!next.h3_pinkcherry_url) next.h3_pinkcherry_url = 'http://127.0.0.1:30013'
   if (!next.h3_director_url) next.h3_director_url = 'http://127.0.0.1:30014'
   if (!next.qwen_image_url) next.qwen_image_url = 'http://127.0.0.1:30021'
+  if (!next.hunyuan_video_url) next.hunyuan_video_url = 'http://127.0.0.1:30022'
+  if (!next.ltx23_url) next.ltx23_url = 'http://127.0.0.1:30023'
   if (!next.chat_url) next.chat_url = 'http://127.0.0.1:11434'
   if (!next.chat_model) next.chat_model = 'qwen3.5:4b'
   form.value = next
