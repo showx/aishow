@@ -43,13 +43,27 @@ if not exist "%LLM%" (
 )
 if not exist "%QWEN_IMAGE_UC_ROOT%\lora" mkdir "%QWEN_IMAGE_UC_ROOT%\lora"
 
+set "LOG=%SDCPP_ROOT%\sd-server.log"
+set "STOP=%SDCPP_ROOT%\sd-server.stop"
+if exist "%STOP%" del "%STOP%"
+
+netstat -ano | findstr ":%QWEN_IMAGE_UC_PORT% " | findstr "LISTENING" >nul
+if not errorlevel 1 (
+  echo 已在运行: http://%QWEN_IMAGE_UC_HOST%:%QWEN_IMAGE_UC_PORT%/
+  exit /b 0
+)
+
 echo 扩散: %UNET%
 echo 文本: %LLM%
 echo VAE:  %VAE%
 echo 地址: http://%QWEN_IMAGE_UC_HOST%:%QWEN_IMAGE_UC_PORT%/
-echo 24GB：文本编码器放内存，扩散模型留在显卡。
+echo 日志: %LOG%
+echo 关掉本窗口才会停。进程若自己退出，3 秒后会重新拉起。
 
 cd /d "%SDCPP_ROOT%"
+:serve
+if exist "%STOP%" exit /b 0
+echo ===== %date% %time% =====>> "%LOG%"
 "%SD_SERVER%" ^
   --diffusion-model "%UNET%" ^
   --vae "%VAE%" ^
@@ -62,8 +76,10 @@ cd /d "%SDCPP_ROOT%"
   --steps 20 ^
   -W 1024 -H 1024 ^
   --listen-ip %QWEN_IMAGE_UC_HOST% ^
-  --listen-port %QWEN_IMAGE_UC_PORT%
-
-echo.
-echo sd-server 已退出。
-if /i not "%AISHOW_HEADLESS%"=="1" pause
+  --listen-port %QWEN_IMAGE_UC_PORT% >> "%LOG%" 2>&1
+set "RC=%ERRORLEVEL%"
+echo exit %RC%>> "%LOG%"
+if exist "%STOP%" exit /b 0
+echo sd-server 退出码 %RC%，3 秒后重启。日志: %LOG%
+timeout /t 3 /nobreak >nul
+goto serve
